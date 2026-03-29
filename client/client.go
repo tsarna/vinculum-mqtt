@@ -209,6 +209,7 @@ func (c *MQTTClient) buildAutopahoConfig(
 			return true // always reconnect
 		},
 
+		AttemptConnection: makeAttemptConnection(c.cfg.TLSConfig),
 		ClientConfig: paho.ClientConfig{
 			Router:   router,
 			ClientID: c.cfg.ClientID,
