@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.2.0 (2026-04-02)
+
 ### Added
 
 - **Distributed tracing via W3C TraceContext over MQTT 5 user properties** — bidirectional trace context propagation using `go.opentelemetry.io/otel` and the global `TextMapPropagator`:
