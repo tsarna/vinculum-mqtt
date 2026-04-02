@@ -15,6 +15,7 @@ import (
 	"github.com/zclconf/go-cty/cty"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -69,14 +70,15 @@ type TopicMapping struct {
 // OnEvent returns an error if called before SetPublishFunc.
 type MQTTPublisher struct {
 	bus.BaseSubscriber
-	mu            sync.RWMutex
-	publishFunc   PublishFunc
-	topicMappings []TopicMapping
-	defaultXform  DefaultTopicTransform
-	defaultQoS    byte
-	defaultRetain bool
-	logger        *zap.Logger
-	metrics       *PublisherMetrics
+	mu             sync.RWMutex
+	publishFunc    PublishFunc
+	topicMappings  []TopicMapping
+	defaultXform   DefaultTopicTransform
+	defaultQoS     byte
+	defaultRetain  bool
+	logger         *zap.Logger
+	metrics        *PublisherMetrics
+	tracerProvider trace.TracerProvider
 }
 
 // SetPublishFunc injects the MQTT publish function. Thread-safe. Called by
@@ -132,7 +134,11 @@ func (p *MQTTPublisher) OnEvent(ctx context.Context, topic string, msg any, fiel
 	}
 
 	// Span covers the actual broker publish call.
-	tracer := otel.GetTracerProvider().Tracer("vinculum-mqtt/publisher")
+	tp := p.tracerProvider
+	if tp == nil {
+		tp = otel.GetTracerProvider()
+	}
+	tracer := tp.Tracer("vinculum-mqtt/publisher")
 	ctx, span := tracer.Start(ctx, "send "+mqttTopic)
 	defer span.End()
 

@@ -5,6 +5,7 @@ import (
 
 	bus "github.com/tsarna/vinculum-bus"
 	"github.com/tsarna/vinculum-bus/o11y"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -16,6 +17,7 @@ type SubscriberBuilder struct {
 	sharedGroup     string
 	logger          *zap.Logger
 	metricsProvider o11y.MetricsProvider
+	tracerProvider  trace.TracerProvider
 }
 
 // NewSubscriber returns a SubscriberBuilder with default settings:
@@ -70,6 +72,13 @@ func (b *SubscriberBuilder) WithMetricsProvider(p o11y.MetricsProvider) *Subscri
 	return b
 }
 
+// WithTracerProvider sets the OTel TracerProvider used to create processing
+// spans. When nil, the global TracerProvider is used.
+func (b *SubscriberBuilder) WithTracerProvider(tp trace.TracerProvider) *SubscriberBuilder {
+	b.tracerProvider = tp
+	return b
+}
+
 // Build validates configuration and returns an MQTTSubscriber.
 func (b *SubscriberBuilder) Build() (*MQTTSubscriber, error) {
 	if b.subscriber == nil {
@@ -85,5 +94,6 @@ func (b *SubscriberBuilder) Build() (*MQTTSubscriber, error) {
 		sharedGroup:    b.sharedGroup,
 		logger:         b.logger,
 		metrics:        NewSubscriberMetrics(b.metricsProvider),
+		tracerProvider: b.tracerProvider,
 	}, nil
 }

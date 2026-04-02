@@ -349,29 +349,37 @@ func TestUserPropertiesToFields_OnlyTraceHeaders(t *testing.T) {
 
 // ── tracing helpers ───────────────────────────────────────────────────────────
 
-func setupTestTracer(t *testing.T) *tracetest.InMemoryExporter {
+func setupTestTracer(t *testing.T) (*tracetest.InMemoryExporter, *sdktrace.TracerProvider) {
 	t.Helper()
 	exporter := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
-	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},
 	))
 	t.Cleanup(func() {
 		tp.Shutdown(context.Background()) //nolint:errcheck
-		otel.SetTracerProvider(otel.GetTracerProvider())
 	})
-	return exporter
+	return exporter, tp
 }
 
 // ── HandleMessage tracing ─────────────────────────────────────────────────────
 
+func makeTracedSubscriber(pattern string, fn VinculumTopicFunc, target bus.Subscriber, tp *sdktrace.TracerProvider) *MQTTSubscriber {
+	s, _ := NewSubscriber().
+		WithSubscription(TopicSubscription{MQTTPattern: pattern}).
+		WithSubscriber(target).
+		WithTracerProvider(tp).
+		Build()
+	s.subscriptions[0].VinculumTopicFunc = fn
+	return s
+}
+
 func TestHandleMessage_CreatesProcessSpan(t *testing.T) {
-	exporter := setupTestTracer(t)
+	exporter, tp := setupTestTracer(t)
 
 	target := &captureSubscriber{}
-	s := makeSubscriber("test/#", staticTopicFunc("a/b"), target, true)
+	s := makeTracedSubscriber("test/#", staticTopicFunc("a/b"), target, tp)
 
 	err := s.HandleMessage(context.Background(), makePub("test/x", []byte(`{}`)))
 	require.NoError(t, err)
@@ -382,10 +390,10 @@ func TestHandleMessage_CreatesProcessSpan(t *testing.T) {
 }
 
 func TestHandleMessage_PropagatesRemoteTraceContext(t *testing.T) {
-	exporter := setupTestTracer(t)
+	exporter, tp := setupTestTracer(t)
 
 	target := &captureSubscriber{}
-	s := makeSubscriber("test/#", staticTopicFunc("a/b"), target, true)
+	s := makeTracedSubscriber("test/#", staticTopicFunc("a/b"), target, tp)
 
 	remoteTraceID := "80e1afed08e019fc1110464cfa66635c"
 	pub := &paho.Publish{
@@ -408,10 +416,10 @@ func TestHandleMessage_PropagatesRemoteTraceContext(t *testing.T) {
 }
 
 func TestHandleMessage_TraceHeadersNotInFields(t *testing.T) {
-	setupTestTracer(t)
+	_, tp := setupTestTracer(t)
 
 	target := &captureSubscriber{}
-	s := makeSubscriber("test/#", nil, target, true)
+	s := makeTracedSubscriber("test/#", nil, target, tp)
 
 	pub := &paho.Publish{
 		Topic:   "test/x",
@@ -431,10 +439,10 @@ func TestHandleMessage_TraceHeadersNotInFields(t *testing.T) {
 }
 
 func TestHandleMessage_SpanRecordsError(t *testing.T) {
-	exporter := setupTestTracer(t)
+	exporter, tp := setupTestTracer(t)
 
 	target := &captureSubscriber{err: errors.New("downstream failure")}
-	s := makeSubscriber("test/#", staticTopicFunc("a/b"), target, true)
+	s := makeTracedSubscriber("test/#", staticTopicFunc("a/b"), target, tp)
 
 	err := s.HandleMessage(context.Background(), makePub("test/x", []byte(`{}`)))
 	assert.Error(t, err)

@@ -2,6 +2,7 @@ package publisher
 
 import (
 	"github.com/tsarna/vinculum-bus/o11y"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -13,6 +14,7 @@ type PublisherBuilder struct {
 	defaultRetain   bool
 	logger          *zap.Logger
 	metricsProvider o11y.MetricsProvider
+	tracerProvider  trace.TracerProvider
 }
 
 // NewPublisher returns a PublisherBuilder with default settings:
@@ -67,15 +69,23 @@ func (b *PublisherBuilder) WithMetricsProvider(p o11y.MetricsProvider) *Publishe
 	return b
 }
 
+// WithTracerProvider sets the OTel TracerProvider used to create send spans.
+// When nil, the global TracerProvider is used.
+func (b *PublisherBuilder) WithTracerProvider(tp trace.TracerProvider) *PublisherBuilder {
+	b.tracerProvider = tp
+	return b
+}
+
 // Build returns an MQTTPublisher. The publisher starts disconnected; call
 // SetPublishFunc (or use client.MQTTClient.Start) before publishing events.
 func (b *PublisherBuilder) Build() (*MQTTPublisher, error) {
 	return &MQTTPublisher{
-		topicMappings: b.topicMappings,
-		defaultXform:  b.defaultXform,
-		defaultQoS:    b.defaultQoS,
-		defaultRetain: b.defaultRetain,
-		logger:        b.logger,
-		metrics:       NewPublisherMetrics(b.metricsProvider),
+		topicMappings:  b.topicMappings,
+		defaultXform:   b.defaultXform,
+		defaultQoS:     b.defaultQoS,
+		defaultRetain:  b.defaultRetain,
+		logger:         b.logger,
+		metrics:        NewPublisherMetrics(b.metricsProvider),
+		tracerProvider: b.tracerProvider,
 	}, nil
 }

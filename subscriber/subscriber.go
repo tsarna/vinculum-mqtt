@@ -13,6 +13,7 @@ import (
 	bus "github.com/tsarna/vinculum-bus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -53,6 +54,7 @@ type MQTTSubscriber struct {
 	sharedGroup    string
 	logger         *zap.Logger
 	metrics        *SubscriberMetrics
+	tracerProvider trace.TracerProvider
 }
 
 // HandleMessage is registered with the paho router by client.MQTTClient. It
@@ -116,7 +118,11 @@ func (s *MQTTSubscriber) HandleMessage(ctx context.Context, pub *paho.Publish) e
 	// Create a span covering the full vinculum processing time (topic
 	// resolution, deserialization, and subscriber.OnEvent including action
 	// evaluation). Uses the extracted remote trace context as parent.
-	tracer := otel.GetTracerProvider().Tracer("vinculum-mqtt/subscriber")
+	tp := s.tracerProvider
+	if tp == nil {
+		tp = otel.GetTracerProvider()
+	}
+	tracer := tp.Tracer("vinculum-mqtt/subscriber")
 	ctx, span := tracer.Start(ctx, "process "+vinculumTopic)
 	defer span.End()
 

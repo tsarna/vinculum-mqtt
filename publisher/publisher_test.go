@@ -305,36 +305,39 @@ func TestOnEvent_PublishFuncError(t *testing.T) {
 
 // ── tracing ───────────────────────────────────────────────────────────────────
 
-func setupTestTracer(t *testing.T) *tracetest.InMemoryExporter {
+func setupTestTracer(t *testing.T) (*tracetest.InMemoryExporter, *sdktrace.TracerProvider) {
 	t.Helper()
 	exporter := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
-	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},
 	))
 	t.Cleanup(func() {
 		tp.Shutdown(context.Background()) //nolint:errcheck
-		otel.SetTracerProvider(otel.GetTracerProvider())
 	})
-	return exporter
+	return exporter, tp
+}
+
+func makeTracedPublisher(t *testing.T, tp *sdktrace.TracerProvider) (*MQTTPublisher, *capturePublish) {
+	t.Helper()
+	cap := &capturePublish{resp: &paho.PublishResponse{}}
+	p, err := NewPublisher().WithTracerProvider(tp).Build()
+	require.NoError(t, err)
+	p.SetPublishFunc(cap.publish)
+	return p, cap
 }
 
 func TestOnEvent_InjectsTraceparentIntoUserProperties(t *testing.T) {
-	setupTestTracer(t)
+	_, tp := setupTestTracer(t)
 
-	cap := &capturePublish{resp: &paho.PublishResponse{}}
-	p, err := NewPublisher().Build()
-	require.NoError(t, err)
-	p.SetPublishFunc(cap.publish)
+	p, cap := makeTracedPublisher(t, tp)
 
 	// Start a root span so the propagator has something to inject.
-	tracer := otel.GetTracerProvider().Tracer("test")
-	ctx, span := tracer.Start(context.Background(), "root")
+	ctx, span := tp.Tracer("test").Start(context.Background(), "root")
 	defer span.End()
 
-	err = p.OnEvent(ctx, "test/topic", nil, nil)
+	err := p.OnEvent(ctx, "test/topic", nil, nil)
 	require.NoError(t, err)
 	require.Len(t, cap.calls, 1)
 
@@ -348,14 +351,11 @@ func TestOnEvent_InjectsTraceparentIntoUserProperties(t *testing.T) {
 }
 
 func TestOnEvent_CreatesSendSpan(t *testing.T) {
-	exporter := setupTestTracer(t)
+	exporter, tp := setupTestTracer(t)
 
-	cap := &capturePublish{resp: &paho.PublishResponse{}}
-	p, err := NewPublisher().Build()
-	require.NoError(t, err)
-	p.SetPublishFunc(cap.publish)
+	p, _ := makeTracedPublisher(t, tp)
 
-	err = p.OnEvent(context.Background(), "sensor/temp", nil, nil)
+	err := p.OnEvent(context.Background(), "sensor/temp", nil, nil)
 	require.NoError(t, err)
 
 	spans := exporter.GetSpans()
@@ -364,10 +364,10 @@ func TestOnEvent_CreatesSendSpan(t *testing.T) {
 }
 
 func TestOnEvent_SpanRecordsError(t *testing.T) {
-	exporter := setupTestTracer(t)
+	exporter, tp := setupTestTracer(t)
 
 	cap := &capturePublish{err: errors.New("broker unavailable")}
-	p, err := NewPublisher().Build()
+	p, err := NewPublisher().WithTracerProvider(tp).Build()
 	require.NoError(t, err)
 	p.SetPublishFunc(cap.publish)
 
