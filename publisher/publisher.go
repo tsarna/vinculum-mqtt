@@ -10,8 +10,11 @@ import (
 	"github.com/amir-yaghoubi/mqttpattern"
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/tsarna/go2cty2go"
+	"github.com/tsarna/vinculum-mqtt/carrier"
 	bus "github.com/tsarna/vinculum-bus"
 	"github.com/zclconf/go-cty/cty"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/zap"
 )
 
@@ -119,16 +122,27 @@ func (p *MQTTPublisher) OnEvent(ctx context.Context, topic string, msg any, fiel
 		Payload: payload,
 	}
 
-	userProps := fieldsToUserProperties(fields)
-	if len(userProps) > 0 {
-		pub.Properties = &paho.PublishProperties{User: userProps}
+	// Build user properties from fields, then inject the current span's trace
+	// context so downstream consumers can continue the trace. The carrier takes
+	// ownership of the userProps slice and may append to it.
+	c := carrier.New(fieldsToUserProperties(fields))
+	otel.GetTextMapPropagator().Inject(ctx, c)
+	if up := c.UserProperties(); len(up) > 0 {
+		pub.Properties = &paho.PublishProperties{User: up}
 	}
+
+	// Span covers the actual broker publish call.
+	tracer := otel.GetTracerProvider().Tracer("vinculum-mqtt/publisher")
+	ctx, span := tracer.Start(ctx, "send "+mqttTopic)
+	defer span.End()
 
 	start := time.Now()
 	_, err = fn(ctx, pub)
 	elapsed := time.Since(start)
 
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		p.metrics.RecordError(ctx, mqttTopic)
 		return fmt.Errorf("mqtt publisher: publish to %q: %w", mqttTopic, err)
 	}

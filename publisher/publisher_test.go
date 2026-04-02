@@ -9,6 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zclconf/go-cty/cty"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 // capturePublish records publish calls without a broker.
@@ -297,6 +301,82 @@ func TestOnEvent_PublishFuncError(t *testing.T) {
 
 	err = p.OnEvent(context.Background(), "test/topic", nil, nil)
 	assert.ErrorContains(t, err, "broker unavailable")
+}
+
+// ── tracing ───────────────────────────────────────────────────────────────────
+
+func setupTestTracer(t *testing.T) *tracetest.InMemoryExporter {
+	t.Helper()
+	exporter := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+	t.Cleanup(func() {
+		tp.Shutdown(context.Background()) //nolint:errcheck
+		otel.SetTracerProvider(otel.GetTracerProvider())
+	})
+	return exporter
+}
+
+func TestOnEvent_InjectsTraceparentIntoUserProperties(t *testing.T) {
+	setupTestTracer(t)
+
+	cap := &capturePublish{resp: &paho.PublishResponse{}}
+	p, err := NewPublisher().Build()
+	require.NoError(t, err)
+	p.SetPublishFunc(cap.publish)
+
+	// Start a root span so the propagator has something to inject.
+	tracer := otel.GetTracerProvider().Tracer("test")
+	ctx, span := tracer.Start(context.Background(), "root")
+	defer span.End()
+
+	err = p.OnEvent(ctx, "test/topic", nil, nil)
+	require.NoError(t, err)
+	require.Len(t, cap.calls, 1)
+
+	pub := cap.calls[0]
+	require.NotNil(t, pub.Properties, "Properties must be set when a span is active")
+	got := make(map[string]string)
+	for _, up := range pub.Properties.User {
+		got[up.Key] = up.Value
+	}
+	assert.Contains(t, got, "traceparent", "traceparent must be injected into MQTT user properties")
+}
+
+func TestOnEvent_CreatesSendSpan(t *testing.T) {
+	exporter := setupTestTracer(t)
+
+	cap := &capturePublish{resp: &paho.PublishResponse{}}
+	p, err := NewPublisher().Build()
+	require.NoError(t, err)
+	p.SetPublishFunc(cap.publish)
+
+	err = p.OnEvent(context.Background(), "sensor/temp", nil, nil)
+	require.NoError(t, err)
+
+	spans := exporter.GetSpans()
+	require.NotEmpty(t, spans)
+	assert.Equal(t, "send sensor/temp", spans[0].Name)
+}
+
+func TestOnEvent_SpanRecordsError(t *testing.T) {
+	exporter := setupTestTracer(t)
+
+	cap := &capturePublish{err: errors.New("broker unavailable")}
+	p, err := NewPublisher().Build()
+	require.NoError(t, err)
+	p.SetPublishFunc(cap.publish)
+
+	err = p.OnEvent(context.Background(), "test/topic", nil, nil)
+	assert.Error(t, err)
+
+	spans := exporter.GetSpans()
+	require.NotEmpty(t, spans)
+	assert.Len(t, spans[0].Events, 1, "expected one error event on the span")
 }
 
 func TestOnEvent_QoSFromMapping(t *testing.T) {

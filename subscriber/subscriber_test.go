@@ -9,6 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	bus "github.com/tsarna/vinculum-bus"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 // captureSubscriber records the arguments passed to OnEvent.
@@ -314,6 +318,130 @@ func TestHandleMessage_NoMatch(t *testing.T) {
 	err := s.HandleMessage(context.Background(), makePub("status/online", nil))
 	assert.Error(t, err)
 	assert.Empty(t, target.topic)
+}
+
+// ── userPropertiesToFields trace filtering ────────────────────────────────────
+
+func TestUserPropertiesToFields_FiltersTraceHeaders(t *testing.T) {
+	props := &paho.PublishProperties{
+		User: paho.UserProperties{
+			{Key: "region", Value: "eu-west"},
+			{Key: "traceparent", Value: "00-80e1afed08e019fc1110464cfa66635c-7a085853722dc6d2-01"},
+			{Key: "tracestate", Value: "vendor=abc"},
+			{Key: "baggage", Value: "userId=42"},
+		},
+	}
+	result := userPropertiesToFields(props)
+	assert.Equal(t, map[string]string{"region": "eu-west"}, result,
+		"trace headers should be filtered, business headers should remain")
+}
+
+func TestUserPropertiesToFields_OnlyTraceHeaders(t *testing.T) {
+	props := &paho.PublishProperties{
+		User: paho.UserProperties{
+			{Key: "traceparent", Value: "00-abc-def-01"},
+			{Key: "tracestate", Value: "k=v"},
+		},
+	}
+	assert.Nil(t, userPropertiesToFields(props),
+		"should return nil when only trace headers are present")
+}
+
+// ── tracing helpers ───────────────────────────────────────────────────────────
+
+func setupTestTracer(t *testing.T) *tracetest.InMemoryExporter {
+	t.Helper()
+	exporter := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+	t.Cleanup(func() {
+		tp.Shutdown(context.Background()) //nolint:errcheck
+		otel.SetTracerProvider(otel.GetTracerProvider())
+	})
+	return exporter
+}
+
+// ── HandleMessage tracing ─────────────────────────────────────────────────────
+
+func TestHandleMessage_CreatesProcessSpan(t *testing.T) {
+	exporter := setupTestTracer(t)
+
+	target := &captureSubscriber{}
+	s := makeSubscriber("test/#", staticTopicFunc("a/b"), target, true)
+
+	err := s.HandleMessage(context.Background(), makePub("test/x", []byte(`{}`)))
+	require.NoError(t, err)
+
+	spans := exporter.GetSpans()
+	require.NotEmpty(t, spans)
+	assert.Equal(t, "process a/b", spans[0].Name)
+}
+
+func TestHandleMessage_PropagatesRemoteTraceContext(t *testing.T) {
+	exporter := setupTestTracer(t)
+
+	target := &captureSubscriber{}
+	s := makeSubscriber("test/#", staticTopicFunc("a/b"), target, true)
+
+	remoteTraceID := "80e1afed08e019fc1110464cfa66635c"
+	pub := &paho.Publish{
+		Topic:   "test/x",
+		Payload: []byte(`{}`),
+		Properties: &paho.PublishProperties{
+			User: paho.UserProperties{
+				{Key: "traceparent", Value: "00-" + remoteTraceID + "-7a085853722dc6d2-01"},
+			},
+		},
+	}
+
+	err := s.HandleMessage(context.Background(), pub)
+	require.NoError(t, err)
+
+	spans := exporter.GetSpans()
+	require.NotEmpty(t, spans)
+	assert.Equal(t, remoteTraceID, spans[0].SpanContext.TraceID().String(),
+		"vinculum processing span should be a child of the remote trace")
+}
+
+func TestHandleMessage_TraceHeadersNotInFields(t *testing.T) {
+	setupTestTracer(t)
+
+	target := &captureSubscriber{}
+	s := makeSubscriber("test/#", nil, target, true)
+
+	pub := &paho.Publish{
+		Topic:   "test/x",
+		Payload: []byte(`{}`),
+		Properties: &paho.PublishProperties{
+			User: paho.UserProperties{
+				{Key: "region", Value: "eu"},
+				{Key: "traceparent", Value: "00-80e1afed08e019fc1110464cfa66635c-7a085853722dc6d2-01"},
+			},
+		},
+	}
+
+	err := s.HandleMessage(context.Background(), pub)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"region": "eu"}, target.fields,
+		"traceparent must not appear in the fields delivered to the subscriber")
+}
+
+func TestHandleMessage_SpanRecordsError(t *testing.T) {
+	exporter := setupTestTracer(t)
+
+	target := &captureSubscriber{err: errors.New("downstream failure")}
+	s := makeSubscriber("test/#", staticTopicFunc("a/b"), target, true)
+
+	err := s.HandleMessage(context.Background(), makePub("test/x", []byte(`{}`)))
+	assert.Error(t, err)
+
+	spans := exporter.GetSpans()
+	require.NotEmpty(t, spans)
+	assert.Len(t, spans[0].Events, 1, "expected one error event on the span")
 }
 
 // ── Builder validation ────────────────────────────────────────────────────────

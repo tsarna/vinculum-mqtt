@@ -9,7 +9,10 @@ import (
 
 	"github.com/amir-yaghoubi/mqttpattern"
 	"github.com/eclipse/paho.golang/paho"
+	"github.com/tsarna/vinculum-mqtt/carrier"
 	bus "github.com/tsarna/vinculum-bus"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/zap"
 )
 
@@ -69,6 +72,15 @@ func (s *MQTTSubscriber) HandleMessage(ctx context.Context, pub *paho.Publish) e
 
 	msg := deserializePayload(pub.Payload)
 
+	// Extract W3C trace context from MQTT 5 user properties before building
+	// the fields map. The carrier gives the propagator read access to user
+	// properties without modifying them.
+	var rawProps paho.UserProperties
+	if pub.Properties != nil {
+		rawProps = pub.Properties.User
+	}
+	ctx = otel.GetTextMapPropagator().Extract(ctx, carrier.New(rawProps))
+
 	fields := userPropertiesToFields(pub.Properties)
 
 	// Merge pattern-extracted fields; they take precedence over user properties.
@@ -101,10 +113,19 @@ func (s *MQTTSubscriber) HandleMessage(ctx context.Context, pub *paho.Publish) e
 		}
 	}
 
+	// Create a span covering the full vinculum processing time (topic
+	// resolution, deserialization, and subscriber.OnEvent including action
+	// evaluation). Uses the extracted remote trace context as parent.
+	tracer := otel.GetTracerProvider().Tracer("vinculum-mqtt/subscriber")
+	ctx, span := tracer.Start(ctx, "process "+vinculumTopic)
+	defer span.End()
+
 	start := time.Now()
 	err = s.subscriber.OnEvent(ctx, vinculumTopic, msg, fields)
 	s.metrics.RecordProcessDuration(ctx, pub.Topic, time.Since(start))
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		s.metrics.RecordError(ctx, pub.Topic)
 		return err
 	}
@@ -168,15 +189,31 @@ func deserializePayload(payload []byte) any {
 	return v
 }
 
-// userPropertiesToFields converts MQTT 5 user properties to a string map.
-// Duplicate keys: last value wins. Returns nil when there are no properties.
+// traceHeaders is the set of W3C trace context keys injected by OTel
+// propagators. These are filtered from the fields map so business metadata
+// stays clean — the propagator has already extracted them into the context.
+var traceHeaders = map[string]struct{}{
+	"traceparent": {},
+	"tracestate":  {},
+	"baggage":     {},
+}
+
+// userPropertiesToFields converts MQTT 5 user properties to a string map,
+// filtering out W3C trace context headers (traceparent, tracestate, baggage).
+// Duplicate keys: last value wins. Returns nil when there are no
+// non-trace properties.
 func userPropertiesToFields(props *paho.PublishProperties) map[string]string {
 	if props == nil || len(props.User) == 0 {
 		return nil
 	}
 	m := make(map[string]string, len(props.User))
 	for _, p := range props.User {
-		m[p.Key] = p.Value
+		if _, isTrace := traceHeaders[p.Key]; !isTrace {
+			m[p.Key] = p.Value
+		}
+	}
+	if len(m) == 0 {
+		return nil
 	}
 	return m
 }

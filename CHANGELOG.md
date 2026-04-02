@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Distributed tracing via W3C TraceContext over MQTT 5 user properties** — bidirectional trace context propagation using `go.opentelemetry.io/otel` and the global `TextMapPropagator`:
+  - **`carrier` package** — new `propagation.TextMapCarrier` implementation backed by `paho.UserProperties`, used by both subscriber and publisher.
+  - **Subscriber**: extracts `traceparent`/`tracestate`/`baggage` from inbound message user properties into the context before processing. Creates a `process <topic>` child span that wraps the full vinculum processing time including `subscriber.OnEvent`. W3C trace headers are filtered from the `fields` map delivered to VCL actions so business metadata stays clean.
+  - **Publisher**: injects the current span's trace context into outgoing message user properties so downstream consumers can continue the trace. Creates a `send <topic>` span around the broker publish call.
+
 ## v0.1.0 (2026-03-26)
 
 Initial release.
