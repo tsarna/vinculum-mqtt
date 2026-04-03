@@ -129,6 +129,7 @@ func (s *MQTTSubscriber) HandleMessage(ctx context.Context, pub *paho.Publish) e
 	tracer := tp.Tracer("vinculum-mqtt/subscriber")
 	spanOpts := []trace.SpanStartOption{
 		trace.WithNewRoot(),
+		trace.WithSpanKind(trace.SpanKindConsumer),
 		trace.WithAttributes(
 			semconv.MessagingSystemKey.String("mqtt"),
 			semconv.MessagingDestinationNameKey.String(pub.Topic),

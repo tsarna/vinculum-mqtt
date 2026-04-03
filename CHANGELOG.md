@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## v0.5.0 (2026-04-03)
+
+### Added
+
+- **OTel span kinds** — publisher spans use `SpanKindProducer` and subscriber spans use `SpanKindConsumer`, enabling tracing backends to correctly classify spans and render messaging topology views.
+
 ## v0.4.0 (2026-04-03)
 
 ### Added

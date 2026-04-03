@@ -141,6 +141,7 @@ func (p *MQTTPublisher) OnEvent(ctx context.Context, topic string, msg any, fiel
 	}
 	tracer := tp.Tracer("vinculum-mqtt/publisher")
 	ctx, span := tracer.Start(ctx, "send "+mqttTopic,
+		trace.WithSpanKind(trace.SpanKindProducer),
 		trace.WithAttributes(
 			semconv.MessagingSystemKey.String("mqtt"),
 			semconv.MessagingDestinationNameKey.String(mqttTopic),
