@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## v0.3.0 (2026-04-03)
+
+### Changed
+
+- **OTel span links for MQTT subscriber traces** — the `process <topic>` span is now created as a new trace root with a link to the remote producer span, following the [OTel messaging semantic conventions](https://opentelemetry.io/docs/specs/otel/trace/semantic_conventions/messaging/) recommendation for async pub/sub boundaries. Previously the subscriber span was a child of the producer's trace.
+
 ## v0.2.0 (2026-04-02)
 
 ### Added

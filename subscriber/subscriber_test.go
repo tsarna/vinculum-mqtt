@@ -389,7 +389,7 @@ func TestHandleMessage_CreatesProcessSpan(t *testing.T) {
 	assert.Equal(t, "process a/b", spans[0].Name)
 }
 
-func TestHandleMessage_PropagatesRemoteTraceContext(t *testing.T) {
+func TestHandleMessage_LinksRemoteTraceContext(t *testing.T) {
 	exporter, tp := setupTestTracer(t)
 
 	target := &captureSubscriber{}
@@ -411,8 +411,11 @@ func TestHandleMessage_PropagatesRemoteTraceContext(t *testing.T) {
 
 	spans := exporter.GetSpans()
 	require.NotEmpty(t, spans)
-	assert.Equal(t, remoteTraceID, spans[0].SpanContext.TraceID().String(),
-		"vinculum processing span should be a child of the remote trace")
+	assert.NotEqual(t, remoteTraceID, spans[0].SpanContext.TraceID().String(),
+		"vinculum processing span should be a new trace root, not a child of the remote trace")
+	require.Len(t, spans[0].Links, 1, "expected one link to the remote producer span")
+	assert.Equal(t, remoteTraceID, spans[0].Links[0].SpanContext.TraceID().String(),
+		"link should point to the remote producer trace")
 }
 
 func TestHandleMessage_TraceHeadersNotInFields(t *testing.T) {

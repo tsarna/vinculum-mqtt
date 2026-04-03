@@ -81,7 +81,8 @@ func (s *MQTTSubscriber) HandleMessage(ctx context.Context, pub *paho.Publish) e
 	if pub.Properties != nil {
 		rawProps = pub.Properties.User
 	}
-	ctx = otel.GetTextMapPropagator().Extract(ctx, carrier.New(rawProps))
+	remoteCtx := otel.GetTextMapPropagator().Extract(context.Background(), carrier.New(rawProps))
+	remoteSpanCtx := trace.SpanContextFromContext(remoteCtx)
 
 	fields := userPropertiesToFields(pub.Properties)
 
@@ -117,13 +118,19 @@ func (s *MQTTSubscriber) HandleMessage(ctx context.Context, pub *paho.Publish) e
 
 	// Create a span covering the full vinculum processing time (topic
 	// resolution, deserialization, and subscriber.OnEvent including action
-	// evaluation). Uses the extracted remote trace context as parent.
+	// evaluation). Per OTel messaging semantic conventions, consumer spans
+	// should be new trace roots linked to the producer span rather than
+	// children of it, correctly representing the async pub/sub boundary.
 	tp := s.tracerProvider
 	if tp == nil {
 		tp = otel.GetTracerProvider()
 	}
 	tracer := tp.Tracer("vinculum-mqtt/subscriber")
-	ctx, span := tracer.Start(ctx, "process "+vinculumTopic)
+	spanOpts := []trace.SpanStartOption{trace.WithNewRoot()}
+	if remoteSpanCtx.IsValid() {
+		spanOpts = append(spanOpts, trace.WithLinks(trace.Link{SpanContext: remoteSpanCtx}))
+	}
+	ctx, span := tracer.Start(ctx, "process "+vinculumTopic, spanOpts...)
 	defer span.End()
 
 	start := time.Now()
