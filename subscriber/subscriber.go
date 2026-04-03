@@ -13,6 +13,7 @@ import (
 	bus "github.com/tsarna/vinculum-bus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
@@ -126,7 +127,15 @@ func (s *MQTTSubscriber) HandleMessage(ctx context.Context, pub *paho.Publish) e
 		tp = otel.GetTracerProvider()
 	}
 	tracer := tp.Tracer("vinculum-mqtt/subscriber")
-	spanOpts := []trace.SpanStartOption{trace.WithNewRoot()}
+	spanOpts := []trace.SpanStartOption{
+		trace.WithNewRoot(),
+		trace.WithAttributes(
+			semconv.MessagingSystemKey.String("mqtt"),
+			semconv.MessagingDestinationNameKey.String(pub.Topic),
+			semconv.MessagingOperationTypeDeliver,
+			semconv.MessagingOperationNameKey.String("process"),
+		),
+	}
 	if remoteSpanCtx.IsValid() {
 		spanOpts = append(spanOpts, trace.WithLinks(trace.Link{SpanContext: remoteSpanCtx}))
 	}

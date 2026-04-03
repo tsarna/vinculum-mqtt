@@ -15,6 +15,7 @@ import (
 	"github.com/zclconf/go-cty/cty"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
@@ -139,7 +140,14 @@ func (p *MQTTPublisher) OnEvent(ctx context.Context, topic string, msg any, fiel
 		tp = otel.GetTracerProvider()
 	}
 	tracer := tp.Tracer("vinculum-mqtt/publisher")
-	ctx, span := tracer.Start(ctx, "send "+mqttTopic)
+	ctx, span := tracer.Start(ctx, "send "+mqttTopic,
+		trace.WithAttributes(
+			semconv.MessagingSystemKey.String("mqtt"),
+			semconv.MessagingDestinationNameKey.String(mqttTopic),
+			semconv.MessagingOperationTypePublish,
+			semconv.MessagingOperationNameKey.String("send"),
+		),
+	)
 	defer span.End()
 
 	start := time.Now()

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## v0.4.0 (2026-04-03)
+
+### Added
+
+- **OTel messaging semantic convention attributes** — both publisher and subscriber spans now carry `messaging.system`, `messaging.destination.name`, `messaging.operation.type`, and `messaging.operation.name` attributes per the OTel messaging semantic conventions (`semconv/v1.26.0`).
+
 ## v0.3.0 (2026-04-03)
 
 ### Changed
