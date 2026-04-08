@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/tsarna/vinculum-bus/o11y"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 )
 
@@ -52,8 +52,8 @@ type ClientConfig struct {
 	// drops unexpectedly. It runs synchronously; keep it fast.
 	OnDisconnect func(ctx context.Context)
 
-	// MetricsProvider — optional o11y.MetricsProvider for connection metrics.
-	MetricsProvider o11y.MetricsProvider
+	// MeterProvider — optional OTel MeterProvider for connection metrics.
+	MeterProvider metric.MeterProvider
 
 	// Logger — optional logger.
 	Logger *zap.Logger

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## v0.6.0 (2026-04-08)
+
+### Changed
+
+- **OTel metrics replaces o11y.MetricsProvider abstraction** — client, publisher, and subscriber now accept `metric.MeterProvider` directly via `WithMeterProvider()` or `MeterProvider` config field (replacing `WithMetricsProvider(o11y.MetricsProvider)` / `MetricsProvider` field). Metric names follow OTel semantic conventions: `messaging.client.sent.messages`, `messaging.client.consumed.messages`, `messaging.client.operation.duration`, `messaging.process.duration` where applicable; `mqtt.client.connected`, `mqtt.client.reconnections`, `mqtt.publisher.errors`, `mqtt.subscriber.errors` for MQTT-specific metrics. All metrics carry `messaging.system=mqtt` and `messaging.destination.name` attributes. Requires vinculum-bus v0.11.0.
+
 ## v0.5.0 (2026-04-03)
 
 ### Added

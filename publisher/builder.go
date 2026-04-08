@@ -1,20 +1,20 @@
 package publisher
 
 import (
-	"github.com/tsarna/vinculum-bus/o11y"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 // PublisherBuilder constructs an MQTTPublisher with a fluent API.
 type PublisherBuilder struct {
-	topicMappings   []TopicMapping
-	defaultXform    DefaultTopicTransform
-	defaultQoS      byte
-	defaultRetain   bool
-	logger          *zap.Logger
-	metricsProvider o11y.MetricsProvider
-	tracerProvider  trace.TracerProvider
+	topicMappings  []TopicMapping
+	defaultXform   DefaultTopicTransform
+	defaultQoS     byte
+	defaultRetain  bool
+	logger         *zap.Logger
+	meterProvider  metric.MeterProvider
+	tracerProvider trace.TracerProvider
 }
 
 // NewPublisher returns a PublisherBuilder with default settings:
@@ -63,9 +63,9 @@ func (b *PublisherBuilder) WithLogger(l *zap.Logger) *PublisherBuilder {
 	return b
 }
 
-// WithMetricsProvider sets the metrics provider. nil disables metrics.
-func (b *PublisherBuilder) WithMetricsProvider(p o11y.MetricsProvider) *PublisherBuilder {
-	b.metricsProvider = p
+// WithMeterProvider sets the OTel MeterProvider. nil disables metrics.
+func (b *PublisherBuilder) WithMeterProvider(p metric.MeterProvider) *PublisherBuilder {
+	b.meterProvider = p
 	return b
 }
 
@@ -79,13 +79,17 @@ func (b *PublisherBuilder) WithTracerProvider(tp trace.TracerProvider) *Publishe
 // Build returns an MQTTPublisher. The publisher starts disconnected; call
 // SetPublishFunc (or use client.MQTTClient.Start) before publishing events.
 func (b *PublisherBuilder) Build() (*MQTTPublisher, error) {
+	var meter metric.Meter
+	if b.meterProvider != nil {
+		meter = b.meterProvider.Meter("github.com/tsarna/vinculum-mqtt/publisher")
+	}
 	return &MQTTPublisher{
 		topicMappings:  b.topicMappings,
 		defaultXform:   b.defaultXform,
 		defaultQoS:     b.defaultQoS,
 		defaultRetain:  b.defaultRetain,
 		logger:         b.logger,
-		metrics:        NewPublisherMetrics(b.metricsProvider),
+		metrics:        NewPublisherMetrics(meter),
 		tracerProvider: b.tracerProvider,
 	}, nil
 }

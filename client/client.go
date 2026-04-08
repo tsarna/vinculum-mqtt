@@ -10,6 +10,7 @@ import (
 	"github.com/eclipse/paho.golang/paho"
 	mqttpublisher "github.com/tsarna/vinculum-mqtt/publisher"
 	mqttsubscriber "github.com/tsarna/vinculum-mqtt/subscriber"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 )
 
@@ -40,9 +41,13 @@ func NewClient(cfg ClientConfig) (*MQTTClient, error) {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
+	var meter metric.Meter
+	if cfg.MeterProvider != nil {
+		meter = cfg.MeterProvider.Meter("github.com/tsarna/vinculum-mqtt/client")
+	}
 	return &MQTTClient{
 		cfg:     cfg,
-		metrics: NewClientMetrics(cfg.MetricsProvider),
+		metrics: NewClientMetrics(meter),
 		logger:  logger,
 	}, nil
 }

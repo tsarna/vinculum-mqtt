@@ -4,20 +4,20 @@ import (
 	"errors"
 
 	bus "github.com/tsarna/vinculum-bus"
-	"github.com/tsarna/vinculum-bus/o11y"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 // SubscriberBuilder constructs an MQTTSubscriber with a fluent API.
 type SubscriberBuilder struct {
-	subscriptions   []TopicSubscription
-	subscriber      bus.Subscriber
-	handleRetained  bool
-	sharedGroup     string
-	logger          *zap.Logger
-	metricsProvider o11y.MetricsProvider
-	tracerProvider  trace.TracerProvider
+	subscriptions  []TopicSubscription
+	subscriber     bus.Subscriber
+	handleRetained bool
+	sharedGroup    string
+	logger         *zap.Logger
+	meterProvider  metric.MeterProvider
+	tracerProvider trace.TracerProvider
 }
 
 // NewSubscriber returns a SubscriberBuilder with default settings:
@@ -66,9 +66,9 @@ func (b *SubscriberBuilder) WithLogger(l *zap.Logger) *SubscriberBuilder {
 	return b
 }
 
-// WithMetricsProvider sets the metrics provider. nil disables metrics.
-func (b *SubscriberBuilder) WithMetricsProvider(p o11y.MetricsProvider) *SubscriberBuilder {
-	b.metricsProvider = p
+// WithMeterProvider sets the OTel MeterProvider. nil disables metrics.
+func (b *SubscriberBuilder) WithMeterProvider(p metric.MeterProvider) *SubscriberBuilder {
+	b.meterProvider = p
 	return b
 }
 
@@ -87,13 +87,17 @@ func (b *SubscriberBuilder) Build() (*MQTTSubscriber, error) {
 	if len(b.subscriptions) == 0 {
 		return nil, errors.New("mqtt subscriber: at least one topic subscription is required")
 	}
+	var meter metric.Meter
+	if b.meterProvider != nil {
+		meter = b.meterProvider.Meter("github.com/tsarna/vinculum-mqtt/subscriber")
+	}
 	return &MQTTSubscriber{
 		subscriptions:  b.subscriptions,
 		subscriber:     b.subscriber,
 		handleRetained: b.handleRetained,
 		sharedGroup:    b.sharedGroup,
 		logger:         b.logger,
-		metrics:        NewSubscriberMetrics(b.metricsProvider),
+		metrics:        NewSubscriberMetrics(meter),
 		tracerProvider: b.tracerProvider,
 	}, nil
 }

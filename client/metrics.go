@@ -3,25 +3,34 @@ package client
 import (
 	"context"
 
-	"github.com/tsarna/vinculum-bus/o11y"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 )
 
-// ClientMetrics holds the o11y instruments for an MQTTClient.
+// ClientMetrics holds the OTel instruments for an MQTTClient.
 // A nil *ClientMetrics is valid and results in no-op recording.
 type ClientMetrics struct {
-	connected  o11y.Gauge   // mqtt_client_connected        (1 = connected, 0 = not)
-	reconnects o11y.Counter // mqtt_client_reconnects_total
+	connected  metric.Float64Gauge // mqtt.client.connected (1 = connected, 0 = not)
+	reconnects metric.Int64Counter // mqtt.client.reconnections
 }
 
-// NewClientMetrics creates a ClientMetrics using the given provider.
-// Returns nil if provider is nil, which is safe to call all methods on.
-func NewClientMetrics(provider o11y.MetricsProvider) *ClientMetrics {
-	if provider == nil {
+// NewClientMetrics creates a ClientMetrics using the given Meter.
+// Returns nil if meter is nil, which is safe to call all methods on.
+func NewClientMetrics(meter metric.Meter) *ClientMetrics {
+	if meter == nil {
 		return nil
 	}
+	c, _ := meter.Float64Gauge("mqtt.client.connected",
+		metric.WithUnit("1"),
+		metric.WithDescription("MQTT client connection status (1=connected, 0=disconnected)"),
+	)
+	r, _ := meter.Int64Counter("mqtt.client.reconnections",
+		metric.WithUnit("{reconnection}"),
+		metric.WithDescription("MQTT client reconnection attempts"),
+	)
 	return &ClientMetrics{
-		connected:  provider.Gauge("mqtt_client_connected"),
-		reconnects: provider.Counter("mqtt_client_reconnects_total"),
+		connected:  c,
+		reconnects: r,
 	}
 }
 
@@ -34,7 +43,7 @@ func (m *ClientMetrics) SetConnected(ctx context.Context, up bool) {
 	if up {
 		v = 1.0
 	}
-	m.connected.Set(ctx, v)
+	m.connected.Record(ctx, v, metric.WithAttributes(attribute.String("messaging.system", "mqtt")))
 }
 
 // IncrReconnects increments the reconnection counter.
@@ -42,5 +51,5 @@ func (m *ClientMetrics) IncrReconnects(ctx context.Context) {
 	if m == nil {
 		return
 	}
-	m.reconnects.Add(ctx, 1)
+	m.reconnects.Add(ctx, 1, metric.WithAttributes(attribute.String("messaging.system", "mqtt")))
 }

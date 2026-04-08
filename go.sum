@@ -31,8 +31,8 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/tsarna/go2cty2go v0.1.2 h1:mSEqG5eHUkqaABA1XRgLoLpyEgN99XBZojuZqbFxFko=
 github.com/tsarna/go2cty2go v0.1.2/go.mod h1:IRpRWApZVoPjsCKzI2Yptu5Y1jySTSykG2wMETwoWXc=
-github.com/tsarna/vinculum-bus v0.10.0 h1:12odFMRZzYT/PtdOHK3jHeKuX4cDeWdntubVKWe/UW0=
-github.com/tsarna/vinculum-bus v0.10.0/go.mod h1:SKAhvgLGsgAJn0xtjg6tm+z1GQ5Qg6ke67d8hb0LLT0=
+github.com/tsarna/vinculum-bus v0.11.0 h1:vg2HbElFoh0s6vmPnTvcNwbccO2/qp7o5nYTTC8l5sw=
+github.com/tsarna/vinculum-bus v0.11.0/go.mod h1:fwVN24q/2iKXvtZQeiRB0tW41WsGWsV6nyvwetB25fA=
 github.com/zclconf/go-cty v1.18.0 h1:pJ8+HNI4gFoyRNqVE37wWbJWVw43BZczFo7KUoRczaA=
 github.com/zclconf/go-cty v1.18.0/go.mod h1:qpnV6EDNgC1sns/AleL1fvatHw72j+S+nS+MJ+T2CSg=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=
