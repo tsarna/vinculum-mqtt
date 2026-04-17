@@ -1,6 +1,7 @@
 package publisher
 
 import (
+	wire "github.com/tsarna/vinculum-wire"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -12,6 +13,7 @@ type PublisherBuilder struct {
 	defaultXform   DefaultTopicTransform
 	defaultQoS     byte
 	defaultRetain  bool
+	wireFormat     wire.WireFormat
 	logger         *zap.Logger
 	meterProvider  metric.MeterProvider
 	tracerProvider trace.TracerProvider
@@ -55,6 +57,18 @@ func (b *PublisherBuilder) WithDefaultRetain(retain bool) *PublisherBuilder {
 	return b
 }
 
+// WithWireFormat sets the wire format used to serialize outbound payloads.
+func (b *PublisherBuilder) WithWireFormat(f wire.WireFormat) *PublisherBuilder {
+	b.wireFormat = f
+	return b
+}
+
+// WithWireFormatName sets the wire format by name (e.g. "json", "auto").
+func (b *PublisherBuilder) WithWireFormatName(name string) *PublisherBuilder {
+	b.wireFormat = wire.ByName(name)
+	return b
+}
+
 // WithLogger sets the logger.
 func (b *PublisherBuilder) WithLogger(l *zap.Logger) *PublisherBuilder {
 	if l != nil {
@@ -83,11 +97,16 @@ func (b *PublisherBuilder) Build() (*MQTTPublisher, error) {
 	if b.meterProvider != nil {
 		meter = b.meterProvider.Meter("github.com/tsarna/vinculum-mqtt/publisher")
 	}
+	wf := b.wireFormat
+	if wf == nil {
+		wf = wire.Auto
+	}
 	return &MQTTPublisher{
 		topicMappings:  b.topicMappings,
 		defaultXform:   b.defaultXform,
 		defaultQoS:     b.defaultQoS,
 		defaultRetain:  b.defaultRetain,
+		wireFormat:     wf,
 		logger:         b.logger,
 		metrics:        NewPublisherMetrics(meter),
 		tracerProvider: b.tracerProvider,

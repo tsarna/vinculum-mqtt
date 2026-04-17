@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	bus "github.com/tsarna/vinculum-bus"
+	wire "github.com/tsarna/vinculum-wire"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -15,6 +16,7 @@ type SubscriberBuilder struct {
 	subscriber     bus.Subscriber
 	handleRetained bool
 	sharedGroup    string
+	wireFormat     wire.WireFormat
 	logger         *zap.Logger
 	meterProvider  metric.MeterProvider
 	tracerProvider trace.TracerProvider
@@ -58,6 +60,18 @@ func (b *SubscriberBuilder) WithSharedGroup(group string) *SubscriberBuilder {
 	return b
 }
 
+// WithWireFormat sets the wire format used to deserialize inbound payloads.
+func (b *SubscriberBuilder) WithWireFormat(f wire.WireFormat) *SubscriberBuilder {
+	b.wireFormat = f
+	return b
+}
+
+// WithWireFormatName sets the wire format by name (e.g. "json", "auto").
+func (b *SubscriberBuilder) WithWireFormatName(name string) *SubscriberBuilder {
+	b.wireFormat = wire.ByName(name)
+	return b
+}
+
 // WithLogger sets the logger.
 func (b *SubscriberBuilder) WithLogger(l *zap.Logger) *SubscriberBuilder {
 	if l != nil {
@@ -91,11 +105,16 @@ func (b *SubscriberBuilder) Build() (*MQTTSubscriber, error) {
 	if b.meterProvider != nil {
 		meter = b.meterProvider.Meter("github.com/tsarna/vinculum-mqtt/subscriber")
 	}
+	wf := b.wireFormat
+	if wf == nil {
+		wf = wire.Auto
+	}
 	return &MQTTSubscriber{
 		subscriptions:  b.subscriptions,
 		subscriber:     b.subscriber,
 		handleRetained: b.handleRetained,
 		sharedGroup:    b.sharedGroup,
+		wireFormat:     wf,
 		logger:         b.logger,
 		metrics:        NewSubscriberMetrics(meter),
 		tracerProvider: b.tracerProvider,

@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	bus "github.com/tsarna/vinculum-bus"
+	wire "github.com/tsarna/vinculum-wire"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -55,39 +56,39 @@ func makeSubscriber(pattern string, fn VinculumTopicFunc, target bus.Subscriber,
 		},
 		subscriber:     target,
 		handleRetained: handleRetained,
+		wireFormat:     wire.Auto,
 	}
 }
 
-// ── deserializePayload ────────────────────────────────────────────────────────
+// ── deserialize (via wire format) ─────────────────────────────────────────────
 
-func TestDeserializePayload_Nil(t *testing.T) {
-	assert.Nil(t, deserializePayload(nil))
-}
-
-func TestDeserializePayload_ValidJSONObject(t *testing.T) {
-	result := deserializePayload([]byte(`{"a":1}`))
+func TestDeserialize_ValidJSONObject(t *testing.T) {
+	result, err := wire.Auto.Deserialize([]byte(`{"a":1}`))
+	require.NoError(t, err)
 	m, ok := result.(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, float64(1), m["a"])
 }
 
-func TestDeserializePayload_ValidJSONArray(t *testing.T) {
-	result := deserializePayload([]byte(`[1,2,3]`))
+func TestDeserialize_ValidJSONArray(t *testing.T) {
+	result, err := wire.Auto.Deserialize([]byte(`[1,2,3]`))
+	require.NoError(t, err)
 	arr, ok := result.([]any)
 	require.True(t, ok)
 	assert.Len(t, arr, 3)
 }
 
-func TestDeserializePayload_ValidJSONString(t *testing.T) {
-	assert.Equal(t, "hello", deserializePayload([]byte(`"hello"`)))
+func TestDeserialize_ValidJSONString(t *testing.T) {
+	result, err := wire.Auto.Deserialize([]byte(`"hello"`))
+	require.NoError(t, err)
+	assert.Equal(t, "hello", result)
 }
 
-func TestDeserializePayload_InvalidJSON(t *testing.T) {
-	raw := []byte("not-json")
-	result := deserializePayload(raw)
-	b, ok := result.([]byte)
-	require.True(t, ok)
-	assert.Equal(t, raw, b)
+func TestDeserialize_InvalidJSON(t *testing.T) {
+	result, err := wire.Auto.Deserialize([]byte("not-json"))
+	require.NoError(t, err)
+	// auto format falls back to string per spec
+	assert.Equal(t, "not-json", result)
 }
 
 // ── userPropertiesToFields ────────────────────────────────────────────────────

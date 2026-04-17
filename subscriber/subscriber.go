@@ -2,7 +2,6 @@ package subscriber
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/tsarna/vinculum-mqtt/carrier"
 	bus "github.com/tsarna/vinculum-bus"
+	wire "github.com/tsarna/vinculum-wire"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
@@ -53,6 +53,7 @@ type MQTTSubscriber struct {
 	subscriber     bus.Subscriber
 	handleRetained bool
 	sharedGroup    string
+	wireFormat     wire.WireFormat
 	logger         *zap.Logger
 	metrics        *SubscriberMetrics
 	tracerProvider trace.TracerProvider
@@ -73,7 +74,17 @@ func (s *MQTTSubscriber) HandleMessage(ctx context.Context, pub *paho.Publish) e
 		return err
 	}
 
-	msg := deserializePayload(pub.Payload)
+	var msg any
+	if pub.Payload != nil {
+		var deserErr error
+		msg, deserErr = s.wireFormat.Deserialize(pub.Payload)
+		if deserErr != nil {
+			s.logger.Warn("mqtt subscriber: deserialize failed, passing raw bytes",
+				zap.String("topic", pub.Topic),
+				zap.Error(deserErr))
+			msg = pub.Payload
+		}
+	}
 
 	// Extract W3C trace context from MQTT 5 user properties before building
 	// the fields map. The carrier gives the propagator read access to user
@@ -198,19 +209,6 @@ func stripFieldNames(pattern string) string {
 	return strings.Join(segments, "/")
 }
 
-// deserializePayload converts an MQTT message payload to a Go value.
-// Valid JSON is unmarshalled to any (map/slice/scalar).
-// Invalid or nil JSON is returned as []byte (or nil).
-func deserializePayload(payload []byte) any {
-	if payload == nil {
-		return nil
-	}
-	var v any
-	if err := json.Unmarshal(payload, &v); err != nil {
-		return payload
-	}
-	return v
-}
 
 // traceHeaders is the set of W3C trace context keys injected by OTel
 // propagators. These are filtered from the fields map so business metadata

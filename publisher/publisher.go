@@ -2,7 +2,6 @@ package publisher
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"github.com/tsarna/go2cty2go"
 	"github.com/tsarna/vinculum-mqtt/carrier"
 	bus "github.com/tsarna/vinculum-bus"
+	wire "github.com/tsarna/vinculum-wire"
 	"github.com/zclconf/go-cty/cty"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
@@ -77,6 +77,7 @@ type MQTTPublisher struct {
 	defaultXform   DefaultTopicTransform
 	defaultQoS     byte
 	defaultRetain  bool
+	wireFormat     wire.WireFormat
 	logger         *zap.Logger
 	metrics        *PublisherMetrics
 	tracerProvider trace.TracerProvider
@@ -112,7 +113,17 @@ func (p *MQTTPublisher) OnEvent(ctx context.Context, topic string, msg any, fiel
 		return nil // DefaultTopicIgnore — silently drop
 	}
 
-	payload, err := serializePayload(msg)
+	// Convert cty.Value to native Go before wire-format serialization.
+	if val, ok := msg.(cty.Value); ok {
+		native, err := go2cty2go.CtyToAny(val)
+		if err != nil {
+			p.metrics.RecordError(ctx, mqttTopic)
+			return fmt.Errorf("mqtt publisher: cty conversion: %w", err)
+		}
+		msg = native
+	}
+
+	payload, err := p.wireFormat.Serialize(msg)
 	if err != nil {
 		p.metrics.RecordError(ctx, mqttTopic)
 		return fmt.Errorf("mqtt publisher: serialize payload: %w", err)
@@ -214,32 +225,6 @@ func (p *MQTTPublisher) resolveMapping(topic string, msg any, fields map[string]
 	}
 }
 
-// serializePayload converts a vinculum message payload to []byte for the
-// MQTT message payload.
-//
-//   - cty.Value  → go2cty2go.CtyToAny() → json.Marshal
-//   - []byte     → pass through unchanged
-//   - nil        → nil
-//   - anything else → json.Marshal
-func serializePayload(msg any) ([]byte, error) {
-	if msg == nil {
-		return nil, nil
-	}
-
-	if val, ok := msg.(cty.Value); ok {
-		var err error
-		msg, err = go2cty2go.CtyToAny(val)
-		if err != nil {
-			return nil, fmt.Errorf("cty conversion: %w", err)
-		}
-	}
-
-	if b, ok := msg.([]byte); ok {
-		return b, nil
-	}
-
-	return json.Marshal(msg)
-}
 
 // fieldsToUserProperties converts a vinculum fields map to MQTT 5 user
 // properties. Returns nil for an empty or nil map.
