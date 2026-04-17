@@ -7,10 +7,8 @@ require (
 	github.com/eclipse/paho.golang v0.23.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/stretchr/testify v1.11.1
-	github.com/tsarna/go2cty2go v0.1.2
 	github.com/tsarna/vinculum-bus v0.11.0
 	github.com/tsarna/vinculum-wire v0.1.0
-	github.com/zclconf/go-cty v1.18.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/metric v1.43.0
 	go.opentelemetry.io/otel/sdk v1.43.0
@@ -19,7 +17,6 @@ require (
 )
 
 require (
-	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
@@ -30,6 +27,5 @@ require (
 	go.uber.org/multierr v1.10.0 // indirect
 	golang.org/x/net v0.43.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/text v0.28.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

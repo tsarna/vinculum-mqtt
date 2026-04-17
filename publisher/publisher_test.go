@@ -8,9 +8,7 @@ import (
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tsarna/go2cty2go"
 	wire "github.com/tsarna/vinculum-wire"
-	"github.com/zclconf/go-cty/cty"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -37,19 +35,7 @@ func makePublisher(mappings []TopicMapping, defaultXform DefaultTopicTransform, 
 	}
 }
 
-// --- serialize (via wire format + cty shim) ---
-
-// serializeWithCtyShim mimics the OnEvent cty conversion + wire format path.
-func serializeWithCtyShim(wf wire.WireFormat, msg any) ([]byte, error) {
-	if val, ok := msg.(cty.Value); ok {
-		native, err := go2cty2go.CtyToAny(val)
-		if err != nil {
-			return nil, err
-		}
-		msg = native
-	}
-	return wf.Serialize(msg)
-}
+// --- serialize (via wire format) ---
 
 func TestSerialize_Nil(t *testing.T) {
 	b, err := wire.Auto.Serialize(nil)
@@ -68,28 +54,6 @@ func TestSerialize_GoValue(t *testing.T) {
 	b, err := wire.Auto.Serialize(map[string]any{"hello": "world"})
 	require.NoError(t, err)
 	assert.Equal(t, `{"hello":"world"}`, string(b))
-}
-
-func TestSerialize_CtyString(t *testing.T) {
-	b, err := serializeWithCtyShim(wire.Auto, cty.StringVal("hello"))
-	require.NoError(t, err)
-	// auto format passes strings through verbatim (not JSON-encoded)
-	assert.Equal(t, `hello`, string(b))
-}
-
-func TestSerialize_CtyObject(t *testing.T) {
-	val := cty.ObjectVal(map[string]cty.Value{
-		"count": cty.NumberIntVal(42),
-	})
-	b, err := serializeWithCtyShim(wire.Auto, val)
-	require.NoError(t, err)
-	assert.Equal(t, `{"count":42}`, string(b))
-}
-
-func TestSerialize_CtyNumber(t *testing.T) {
-	b, err := serializeWithCtyShim(wire.Auto, cty.NumberIntVal(99))
-	require.NoError(t, err)
-	assert.Equal(t, `99`, string(b))
 }
 
 // --- fieldsToUserProperties ---

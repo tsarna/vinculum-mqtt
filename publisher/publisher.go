@@ -8,11 +8,9 @@ import (
 
 	"github.com/amir-yaghoubi/mqttpattern"
 	"github.com/eclipse/paho.golang/paho"
-	"github.com/tsarna/go2cty2go"
 	"github.com/tsarna/vinculum-mqtt/carrier"
 	bus "github.com/tsarna/vinculum-bus"
 	wire "github.com/tsarna/vinculum-wire"
-	"github.com/zclconf/go-cty/cty"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
@@ -111,16 +109,6 @@ func (p *MQTTPublisher) OnEvent(ctx context.Context, topic string, msg any, fiel
 	}
 	if mqttTopic == "" {
 		return nil // DefaultTopicIgnore — silently drop
-	}
-
-	// Convert cty.Value to native Go before wire-format serialization.
-	if val, ok := msg.(cty.Value); ok {
-		native, err := go2cty2go.CtyToAny(val)
-		if err != nil {
-			p.metrics.RecordError(ctx, mqttTopic)
-			return fmt.Errorf("mqtt publisher: cty conversion: %w", err)
-		}
-		msg = native
 	}
 
 	payload, err := p.wireFormat.Serialize(msg)

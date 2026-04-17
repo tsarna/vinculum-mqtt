@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.7.0 (2026-04-17)
+
 ### Added
 
 - **Pluggable wire format support** — publisher and subscriber builders now accept `WithWireFormat(wire.WireFormat)` or `WithWireFormatName(name)` to control payload serialization/deserialization. Built-in formats: `auto` (default), `json`, `string`, `bytes`. The default `auto` preserves backward compatibility. Depends on `github.com/tsarna/vinculum-wire` v0.1.0.
@@ -13,6 +15,7 @@
 ### Removed
 
 - **Inline `serializePayload` / `deserializePayload` functions** — replaced by the shared `vinculum-wire` module.
+- **`go2cty2go` and `go-cty` dependencies** — cty conversion now handled by vinculum's `CtyWireFormat` decorator at the config layer.
 
 ## v0.6.0 (2026-04-08)
 
