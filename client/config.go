@@ -16,6 +16,9 @@ type ClientConfig struct {
 	// ServerURLs — one or more broker URLs (mqtt://, mqtts://, ws://, wss://).
 	ServerURLs []*url.URL
 
+	// ClientName — vinculum client name, used in metric attributes.
+	ClientName string
+
 	// ClientID — MQTT client identifier. Must be unique per broker connection.
 	ClientID string
 

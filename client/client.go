@@ -47,7 +47,7 @@ func NewClient(cfg ClientConfig) (*MQTTClient, error) {
 	}
 	return &MQTTClient{
 		cfg:     cfg,
-		metrics: NewClientMetrics(meter),
+		metrics: NewClientMetrics(cfg.ClientName, meter),
 		logger:  logger,
 	}, nil
 }

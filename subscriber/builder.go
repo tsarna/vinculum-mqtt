@@ -12,6 +12,7 @@ import (
 
 // SubscriberBuilder constructs an MQTTSubscriber with a fluent API.
 type SubscriberBuilder struct {
+	clientName     string
 	subscriptions  []TopicSubscription
 	subscriber     bus.Subscriber
 	handleRetained bool
@@ -80,6 +81,12 @@ func (b *SubscriberBuilder) WithLogger(l *zap.Logger) *SubscriberBuilder {
 	return b
 }
 
+// WithClientName sets the vinculum client name used in metric attributes.
+func (b *SubscriberBuilder) WithClientName(name string) *SubscriberBuilder {
+	b.clientName = name
+	return b
+}
+
 // WithMeterProvider sets the OTel MeterProvider. nil disables metrics.
 func (b *SubscriberBuilder) WithMeterProvider(p metric.MeterProvider) *SubscriberBuilder {
 	b.meterProvider = p
@@ -116,7 +123,7 @@ func (b *SubscriberBuilder) Build() (*MQTTSubscriber, error) {
 		sharedGroup:    b.sharedGroup,
 		wireFormat:     wf,
 		logger:         b.logger,
-		metrics:        NewSubscriberMetrics(meter),
+		metrics:        NewSubscriberMetrics(b.clientName, meter),
 		tracerProvider: b.tracerProvider,
 	}, nil
 }

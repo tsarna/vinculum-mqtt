@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+## v0.7.1 (2026-04-18)
+
+- **`vinculum.client.name` metric attribute** — all client, publisher, and subscriber metrics now carry a `vinculum.client.name` attribute identifying the vinculum client block. Publishers and subscribers accept `WithClientName(name)` on their builders; the client accepts `ClientName` in `ClientConfig`.
+
 ## v0.7.0 (2026-04-17)
 
 ### Added

@@ -9,6 +9,7 @@ import (
 
 // PublisherBuilder constructs an MQTTPublisher with a fluent API.
 type PublisherBuilder struct {
+	clientName     string
 	topicMappings  []TopicMapping
 	defaultXform   DefaultTopicTransform
 	defaultQoS     byte
@@ -77,6 +78,12 @@ func (b *PublisherBuilder) WithLogger(l *zap.Logger) *PublisherBuilder {
 	return b
 }
 
+// WithClientName sets the vinculum client name used in metric attributes.
+func (b *PublisherBuilder) WithClientName(name string) *PublisherBuilder {
+	b.clientName = name
+	return b
+}
+
 // WithMeterProvider sets the OTel MeterProvider. nil disables metrics.
 func (b *PublisherBuilder) WithMeterProvider(p metric.MeterProvider) *PublisherBuilder {
 	b.meterProvider = p
@@ -108,7 +115,7 @@ func (b *PublisherBuilder) Build() (*MQTTPublisher, error) {
 		defaultRetain:  b.defaultRetain,
 		wireFormat:     wf,
 		logger:         b.logger,
-		metrics:        NewPublisherMetrics(meter),
+		metrics:        NewPublisherMetrics(b.clientName, meter),
 		tracerProvider: b.tracerProvider,
 	}, nil
 }

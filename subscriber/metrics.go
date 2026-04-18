@@ -14,11 +14,12 @@ type SubscriberMetrics struct {
 	messagesReceived metric.Int64Counter    // messaging.client.consumed.messages
 	errors           metric.Int64Counter    // mqtt.subscriber.errors
 	processDuration  metric.Float64Histogram // messaging.process.duration
+	clientTag        attribute.KeyValue
 }
 
 // NewSubscriberMetrics creates a SubscriberMetrics using the given Meter.
 // Returns nil if meter is nil, which is safe to call all methods on.
-func NewSubscriberMetrics(meter metric.Meter) *SubscriberMetrics {
+func NewSubscriberMetrics(clientName string, meter metric.Meter) *SubscriberMetrics {
 	if meter == nil {
 		return nil
 	}
@@ -38,6 +39,7 @@ func NewSubscriberMetrics(meter metric.Meter) *SubscriberMetrics {
 		messagesReceived: mr,
 		errors:           e,
 		processDuration:  pd,
+		clientTag:        attribute.String("vinculum.client.name", clientName),
 	}
 }
 
@@ -54,7 +56,7 @@ func (m *SubscriberMetrics) RecordReceived(ctx context.Context, topic string) {
 	if m == nil {
 		return
 	}
-	m.messagesReceived.Add(ctx, 1, topicAttr(topic))
+	m.messagesReceived.Add(ctx, 1, topicAttr(topic), metric.WithAttributes(m.clientTag))
 }
 
 // RecordError increments the error counter for the given topic.
@@ -62,7 +64,7 @@ func (m *SubscriberMetrics) RecordError(ctx context.Context, topic string) {
 	if m == nil {
 		return
 	}
-	m.errors.Add(ctx, 1, topicAttr(topic))
+	m.errors.Add(ctx, 1, topicAttr(topic), metric.WithAttributes(m.clientTag))
 }
 
 // RecordProcessDuration records how long OnEvent took for the given topic.
@@ -70,5 +72,5 @@ func (m *SubscriberMetrics) RecordProcessDuration(ctx context.Context, topic str
 	if m == nil {
 		return
 	}
-	m.processDuration.Record(ctx, d.Seconds(), topicAttr(topic))
+	m.processDuration.Record(ctx, d.Seconds(), topicAttr(topic), metric.WithAttributes(m.clientTag))
 }

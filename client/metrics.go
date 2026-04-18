@@ -12,11 +12,12 @@ import (
 type ClientMetrics struct {
 	connected  metric.Float64Gauge // mqtt.client.connected (1 = connected, 0 = not)
 	reconnects metric.Int64Counter // mqtt.client.reconnections
+	clientTag  attribute.KeyValue
 }
 
 // NewClientMetrics creates a ClientMetrics using the given Meter.
 // Returns nil if meter is nil, which is safe to call all methods on.
-func NewClientMetrics(meter metric.Meter) *ClientMetrics {
+func NewClientMetrics(clientName string, meter metric.Meter) *ClientMetrics {
 	if meter == nil {
 		return nil
 	}
@@ -31,6 +32,7 @@ func NewClientMetrics(meter metric.Meter) *ClientMetrics {
 	return &ClientMetrics{
 		connected:  c,
 		reconnects: r,
+		clientTag:  attribute.String("vinculum.client.name", clientName),
 	}
 }
 
@@ -43,7 +45,7 @@ func (m *ClientMetrics) SetConnected(ctx context.Context, up bool) {
 	if up {
 		v = 1.0
 	}
-	m.connected.Record(ctx, v, metric.WithAttributes(attribute.String("messaging.system", "mqtt")))
+	m.connected.Record(ctx, v, metric.WithAttributes(attribute.String("messaging.system", "mqtt"), m.clientTag))
 }
 
 // IncrReconnects increments the reconnection counter.
@@ -51,5 +53,5 @@ func (m *ClientMetrics) IncrReconnects(ctx context.Context) {
 	if m == nil {
 		return
 	}
-	m.reconnects.Add(ctx, 1, metric.WithAttributes(attribute.String("messaging.system", "mqtt")))
+	m.reconnects.Add(ctx, 1, metric.WithAttributes(attribute.String("messaging.system", "mqtt"), m.clientTag))
 }

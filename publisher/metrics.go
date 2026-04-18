@@ -14,11 +14,12 @@ type PublisherMetrics struct {
 	messagesSent    metric.Int64Counter    // messaging.client.sent.messages
 	errors          metric.Int64Counter    // mqtt.publisher.errors
 	publishDuration metric.Float64Histogram // messaging.client.operation.duration
+	clientTag       attribute.KeyValue
 }
 
 // NewPublisherMetrics creates a PublisherMetrics using the given Meter.
 // Returns nil if meter is nil, which is safe to call all methods on.
-func NewPublisherMetrics(meter metric.Meter) *PublisherMetrics {
+func NewPublisherMetrics(clientName string, meter metric.Meter) *PublisherMetrics {
 	if meter == nil {
 		return nil
 	}
@@ -38,6 +39,7 @@ func NewPublisherMetrics(meter metric.Meter) *PublisherMetrics {
 		messagesSent:    ms,
 		errors:          e,
 		publishDuration: pd,
+		clientTag:       attribute.String("vinculum.client.name", clientName),
 	}
 }
 
@@ -56,6 +58,7 @@ func (m *PublisherMetrics) RecordSent(ctx context.Context, topic string) {
 	}
 	m.messagesSent.Add(ctx, 1, topicAttr(topic),
 		metric.WithAttributes(attribute.String("messaging.operation.name", "send")),
+		metric.WithAttributes(m.clientTag),
 	)
 }
 
@@ -64,7 +67,7 @@ func (m *PublisherMetrics) RecordError(ctx context.Context, topic string) {
 	if m == nil {
 		return
 	}
-	m.errors.Add(ctx, 1, topicAttr(topic))
+	m.errors.Add(ctx, 1, topicAttr(topic), metric.WithAttributes(m.clientTag))
 }
 
 // RecordPublishDuration records how long the publish call took.
@@ -74,5 +77,6 @@ func (m *PublisherMetrics) RecordPublishDuration(ctx context.Context, topic stri
 	}
 	m.publishDuration.Record(ctx, d.Seconds(), topicAttr(topic),
 		metric.WithAttributes(attribute.String("messaging.operation.name", "send")),
+		metric.WithAttributes(m.clientTag),
 	)
 }
