@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/amir-yaghoubi/mqttpattern"
 	"github.com/eclipse/paho.golang/paho"
-	"github.com/tsarna/vinculum-mqtt/carrier"
 	bus "github.com/tsarna/vinculum-bus"
+	"github.com/tsarna/vinculum-bus/topicmatch"
+	"github.com/tsarna/vinculum-mqtt/carrier"
 	wire "github.com/tsarna/vinculum-wire"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
@@ -171,13 +171,13 @@ func (p *MQTTPublisher) OnEvent(ctx context.Context, topic string, msg any, fiel
 // when no mapping matches.
 func (p *MQTTPublisher) resolveMapping(topic string, msg any, fields map[string]string) (mqttTopic string, qos byte, retain bool, err error) {
 	for _, m := range p.topicMappings {
-		if !mqttpattern.Matches(m.Pattern, topic) {
+		if !topicmatch.Matches(m.Pattern, topic) {
 			continue
 		}
 
 		// Merge pattern-extracted fields with provided fields.
 		// Pattern-extracted values take precedence.
-		extracted := mqttpattern.Extract(m.Pattern, topic)
+		extracted := topicmatch.Extract(m.Pattern, topic)
 		mergedFields := fields
 		if len(extracted) > 0 {
 			mergedFields = make(map[string]string, len(fields)+len(extracted))

@@ -3,11 +3,10 @@ module github.com/tsarna/vinculum-mqtt
 go 1.25.8
 
 require (
-	github.com/amir-yaghoubi/mqttpattern v0.0.0-20250829083210-f7d8d46a786e
 	github.com/eclipse/paho.golang v0.23.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/stretchr/testify v1.11.1
-	github.com/tsarna/vinculum-bus v0.11.0
+	github.com/tsarna/vinculum-bus v0.12.0
 	github.com/tsarna/vinculum-wire v0.1.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/metric v1.43.0
@@ -17,6 +16,7 @@ require (
 )
 
 require (
+	github.com/amir-yaghoubi/mqttpattern v0.0.0-20250829083210-f7d8d46a786e // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect

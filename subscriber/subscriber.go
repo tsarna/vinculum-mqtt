@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/amir-yaghoubi/mqttpattern"
 	"github.com/eclipse/paho.golang/paho"
-	"github.com/tsarna/vinculum-mqtt/carrier"
 	bus "github.com/tsarna/vinculum-bus"
+	"github.com/tsarna/vinculum-bus/topicmatch"
+	"github.com/tsarna/vinculum-mqtt/carrier"
 	wire "github.com/tsarna/vinculum-wire"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
@@ -99,7 +99,7 @@ func (s *MQTTSubscriber) HandleMessage(ctx context.Context, pub *paho.Publish) e
 	fields := userPropertiesToFields(pub.Properties)
 
 	// Merge pattern-extracted fields; they take precedence over user properties.
-	extracted := mqttpattern.Extract(sub.MQTTPattern, pub.Topic)
+	extracted := topicmatch.Extract(sub.MQTTPattern, pub.Topic)
 	if len(extracted) > 0 {
 		if fields == nil {
 			fields = make(map[string]string, len(extracted))
@@ -186,10 +186,10 @@ func (s *MQTTSubscriber) BrokerSubscriptions() []paho.SubscribeOptions {
 }
 
 // findSubscription returns the first subscription whose MQTTPattern matches
-// the concrete MQTT topic using mqttpattern.Matches.
+// the concrete MQTT topic using topicmatch.Matches.
 func (s *MQTTSubscriber) findSubscription(mqttTopic string) (*TopicSubscription, error) {
 	for i := range s.subscriptions {
-		if mqttpattern.Matches(s.subscriptions[i].MQTTPattern, mqttTopic) {
+		if topicmatch.Matches(s.subscriptions[i].MQTTPattern, mqttTopic) {
 			return &s.subscriptions[i], nil
 		}
 	}
