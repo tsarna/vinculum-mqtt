@@ -2,9 +2,15 @@
 
 ## [Unreleased]
 
-### Added
+## v0.7.2 (2026-04-23)
+
+### Changed
+
+- **Topic matching routes through `vinculum-bus/topicmatch`** — publisher routing and subscriber pattern matching now honor MQTT 5.0 §4.7.2: filters starting with `+` or `#` no longer match reserved `$`-prefixed topics. Exact and `$`-prefixed patterns are unaffected. Requires vinculum-bus v0.12.0.
 
 ## v0.7.1 (2026-04-18)
+
+### Added
 
 - **`vinculum.client.name` metric attribute** — all client, publisher, and subscriber metrics now carry a `vinculum.client.name` attribute identifying the vinculum client block. Publishers and subscribers accept `WithClientName(name)` on their builders; the client accepts `ClientName` in `ClientConfig`.
 
