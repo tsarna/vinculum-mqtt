@@ -7,7 +7,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/stretchr/testify v1.11.1
 	github.com/tsarna/vinculum-bus v0.15.0
-	github.com/tsarna/vinculum-wire v0.1.0
+	github.com/tsarna/vinculum-wire v0.2.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/metric v1.43.0
 	go.opentelemetry.io/otel/sdk v1.43.0
