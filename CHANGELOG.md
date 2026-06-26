@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Inbound baggage now reaches `subscriber.OnEvent`.** The subscriber extracted
+  W3C baggage from MQTT 5 user properties but only used it to link the producer
+  span; the baggage was not carried onto the context passed to `OnEvent`, so
+  consumers could not read it. It is now copied onto the processing context
+  (the consumer span remains a new root linked to the producer — only baggage
+  rides along, not the span parent).
+
 ## v0.8.0 (2026-05-27)
 
 ### Changed

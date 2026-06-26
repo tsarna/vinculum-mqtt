@@ -11,6 +11,7 @@ import (
 	bus "github.com/tsarna/vinculum-bus"
 	wire "github.com/tsarna/vinculum-wire"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -22,10 +23,12 @@ type captureSubscriber struct {
 	topic  string
 	msg    any
 	fields map[string]string
+	gotCtx context.Context
 	err    error
 }
 
-func (s *captureSubscriber) OnEvent(_ context.Context, topic string, msg any, fields map[string]string) error {
+func (s *captureSubscriber) OnEvent(ctx context.Context, topic string, msg any, fields map[string]string) error {
+	s.gotCtx = ctx
 	s.topic = topic
 	s.msg = msg
 	s.fields = fields
@@ -417,6 +420,31 @@ func TestHandleMessage_LinksRemoteTraceContext(t *testing.T) {
 	require.Len(t, spans[0].Links, 1, "expected one link to the remote producer span")
 	assert.Equal(t, remoteTraceID, spans[0].Links[0].SpanContext.TraceID().String(),
 		"link should point to the remote producer trace")
+}
+
+func TestHandleMessage_CarriesInboundBaggage(t *testing.T) {
+	_, tp := setupTestTracer(t) // installs a Baggage-aware global propagator
+
+	target := &captureSubscriber{}
+	s := makeTracedSubscriber("test/#", staticTopicFunc("a/b"), target, tp)
+
+	pub := &paho.Publish{
+		Topic:   "test/x",
+		Payload: []byte(`{}`),
+		Properties: &paho.PublishProperties{
+			User: paho.UserProperties{
+				{Key: "baggage", Value: "tenant_id=acme,secret=x"},
+			},
+		},
+	}
+
+	require.NoError(t, s.HandleMessage(context.Background(), pub))
+
+	// The producer's baggage must reach the OnEvent context (it previously did
+	// not — only the trace span was linked).
+	bg := baggage.FromContext(target.gotCtx)
+	assert.Equal(t, "acme", bg.Member("tenant_id").Value())
+	assert.Equal(t, "x", bg.Member("secret").Value())
 }
 
 func TestHandleMessage_TraceHeadersNotInFields(t *testing.T) {

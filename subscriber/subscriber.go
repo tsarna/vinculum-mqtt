@@ -12,6 +12,7 @@ import (
 	"github.com/tsarna/vinculum-mqtt/carrier"
 	wire "github.com/tsarna/vinculum-wire"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
@@ -95,6 +96,14 @@ func (s *MQTTSubscriber) HandleMessage(ctx context.Context, pub *paho.Publish) e
 	}
 	remoteCtx := otel.GetTextMapPropagator().Extract(context.Background(), carrier.New(rawProps))
 	remoteSpanCtx := trace.SpanContextFromContext(remoteCtx)
+
+	// Carry the producer's baggage onto the processing context so it reaches
+	// subscriber.OnEvent and action expressions. The consumer span below stays a
+	// new root linked to the producer span — only baggage rides along, not the
+	// span parent.
+	if bg := baggage.FromContext(remoteCtx); bg.Len() > 0 {
+		ctx = baggage.ContextWithBaggage(ctx, bg)
+	}
 
 	fields := userPropertiesToFields(pub.Properties)
 
@@ -208,7 +217,6 @@ func stripFieldNames(pattern string) string {
 	}
 	return strings.Join(segments, "/")
 }
-
 
 // traceHeaders is the set of W3C trace context keys injected by OTel
 // propagators. These are filtered from the fields map so business metadata
