@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.8.1 (2026-06-26)
+
 ### Fixed
 
 - **Inbound baggage now reaches `subscriber.OnEvent`.** The subscriber extracted
