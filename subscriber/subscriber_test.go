@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.uber.org/zap"
 )
 
 // captureSubscriber records the arguments passed to OnEvent.
@@ -92,6 +93,69 @@ func TestDeserialize_InvalidJSON(t *testing.T) {
 	require.NoError(t, err)
 	// auto format falls back to string per spec
 	assert.Equal(t, "not-json", result)
+}
+
+// ── strict decode ─────────────────────────────────────────────────────────────
+
+// makeStrictSubscriber builds a JSON-wire-format subscriber matching all
+// topics, optionally with a decode-error hook.
+func makeStrictSubscriber(target bus.Subscriber, hook wire.DecodeErrorHook) *MQTTSubscriber {
+	return &MQTTSubscriber{
+		subscriptions: []TopicSubscription{
+			{MQTTPattern: "#", BrokerTopic: "#"},
+		},
+		subscriber:     target,
+		handleRetained: true,
+		wireFormat:     wire.JSON,
+		onDecodeError:  hook,
+		logger:         zap.NewNop(),
+	}
+}
+
+func TestHandleMessage_DecodeErrorIsFatalAndNotDelivered(t *testing.T) {
+	target := &captureSubscriber{}
+	s := makeStrictSubscriber(target, nil)
+
+	err := s.HandleMessage(context.Background(), makePub("sensor/temp", []byte("not json {{")))
+
+	require.Error(t, err, "the configured wire format is a contract")
+	assert.Nil(t, target.msg, "malformed message must not be delivered")
+	assert.Empty(t, target.topic)
+}
+
+func TestHandleMessage_DecodeErrorInvokesHookWithoutSuppressing(t *testing.T) {
+	target := &captureSubscriber{}
+	var got wire.DecodeError
+	hookCalls := 0
+
+	s := makeStrictSubscriber(target, func(_ context.Context, e wire.DecodeError) {
+		hookCalls++
+		got = e
+	})
+
+	payload := []byte("not json {{")
+	err := s.HandleMessage(context.Background(), makePub("sensor/temp", payload))
+
+	require.Equal(t, 1, hookCalls)
+	assert.Equal(t, payload, got.Raw)
+	assert.Equal(t, "json", got.Format)
+	assert.Equal(t, "sensor/temp", got.Topic)
+	assert.Equal(t, "sensor/temp", got.Attrs["topic"])
+	require.Error(t, got.Err)
+
+	// The hook observes; it does not suppress.
+	require.Error(t, err)
+	assert.Nil(t, target.msg)
+}
+
+func TestHandleMessage_AutoWireFormatToleratesNonJSON(t *testing.T) {
+	target := &captureSubscriber{}
+	s := makeSubscriber("#", nil, target, true)
+
+	// "auto" is the documented migration path off the old tolerant
+	// behavior: it never fails to decode, yielding a string.
+	require.NoError(t, s.HandleMessage(context.Background(), makePub("sensor/temp", []byte("not json {{"))))
+	assert.Equal(t, "not json {{", target.msg)
 }
 
 // ── userPropertiesToFields ────────────────────────────────────────────────────

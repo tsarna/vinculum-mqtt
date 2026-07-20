@@ -55,6 +55,7 @@ type MQTTSubscriber struct {
 	handleRetained bool
 	sharedGroup    string
 	wireFormat     wire.WireFormat
+	onDecodeError  wire.DecodeErrorHook
 	logger         *zap.Logger
 	metrics        *SubscriberMetrics
 	tracerProvider trace.TracerProvider
@@ -71,19 +72,34 @@ func (s *MQTTSubscriber) HandleMessage(ctx context.Context, pub *paho.Publish) e
 
 	sub, err := s.findSubscription(pub.Topic)
 	if err != nil {
-		s.metrics.RecordError(ctx, pub.Topic)
+		s.metrics.RecordError(ctx, pub.Topic, "subscription")
 		return err
 	}
 
+	// A decode failure is fatal to the message: the configured wire format
+	// is a contract, so a payload that doesn't satisfy it is rejected rather
+	// than delivered as raw bytes. Use wire format "auto" for best-effort
+	// decoding.
 	var msg any
 	if pub.Payload != nil {
 		var deserErr error
 		msg, deserErr = s.wireFormat.Deserialize(pub.Payload)
 		if deserErr != nil {
-			s.logger.Warn("mqtt subscriber: deserialize failed, passing raw bytes",
+			s.logger.Error("mqtt subscriber: deserialize failed",
 				zap.String("topic", pub.Topic),
+				zap.String("wire_format", s.wireFormat.Name()),
 				zap.Error(deserErr))
-			msg = pub.Payload
+			s.metrics.RecordError(ctx, pub.Topic, "deserialize")
+			if s.onDecodeError != nil {
+				s.onDecodeError(ctx, wire.DecodeError{
+					Raw:    pub.Payload,
+					Err:    deserErr,
+					Format: s.wireFormat.Name(),
+					Topic:  pub.Topic,
+					Attrs:  map[string]string{"topic": pub.Topic},
+				})
+			}
+			return fmt.Errorf("mqtt subscriber: deserialize payload for %q: %w", pub.Topic, deserErr)
 		}
 	}
 
@@ -129,7 +145,7 @@ func (s *MQTTSubscriber) HandleMessage(ctx context.Context, pub *paho.Publish) e
 	if sub.VinculumTopicFunc != nil {
 		vinculumTopic, err = sub.VinculumTopicFunc(pub.Topic, fields, msg)
 		if err != nil {
-			s.metrics.RecordError(ctx, pub.Topic)
+			s.metrics.RecordError(ctx, pub.Topic, "vinculum_topic")
 			return fmt.Errorf("mqtt subscriber: resolve vinculum topic for %q: %w", pub.Topic, err)
 		}
 		if vinculumTopic == "" {
@@ -169,7 +185,7 @@ func (s *MQTTSubscriber) HandleMessage(ctx context.Context, pub *paho.Publish) e
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		s.metrics.RecordError(ctx, pub.Topic)
+		s.metrics.RecordError(ctx, pub.Topic, "subscriber")
 		return err
 	}
 	s.metrics.RecordReceived(ctx, pub.Topic)

@@ -11,8 +11,8 @@ import (
 // SubscriberMetrics holds the OTel instruments for an MQTTSubscriber.
 // A nil *SubscriberMetrics is valid and results in no-op recording.
 type SubscriberMetrics struct {
-	messagesReceived metric.Int64Counter    // messaging.client.consumed.messages
-	errors           metric.Int64Counter    // mqtt.subscriber.errors
+	messagesReceived metric.Int64Counter     // messaging.client.consumed.messages
+	errors           metric.Int64Counter     // mqtt.subscriber.errors
 	processDuration  metric.Float64Histogram // messaging.process.duration
 	clientTag        attribute.KeyValue
 }
@@ -59,12 +59,18 @@ func (m *SubscriberMetrics) RecordReceived(ctx context.Context, topic string) {
 	m.messagesReceived.Add(ctx, 1, topicAttr(topic), metric.WithAttributes(m.clientTag))
 }
 
-// RecordError increments the error counter for the given topic.
-func (m *SubscriberMetrics) RecordError(ctx context.Context, topic string) {
+// RecordError increments the error counter for the given topic. errType
+// classifies the failure (e.g. "subscription", "deserialize") and is
+// recorded as the error.type attribute; an empty errType omits it.
+func (m *SubscriberMetrics) RecordError(ctx context.Context, topic, errType string) {
 	if m == nil {
 		return
 	}
-	m.errors.Add(ctx, 1, topicAttr(topic), metric.WithAttributes(m.clientTag))
+	attrs := []attribute.KeyValue{m.clientTag}
+	if errType != "" {
+		attrs = append(attrs, attribute.String("error.type", errType))
+	}
+	m.errors.Add(ctx, 1, topicAttr(topic), metric.WithAttributes(attrs...))
 }
 
 // RecordProcessDuration records how long OnEvent took for the given topic.

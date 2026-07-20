@@ -18,6 +18,7 @@ type SubscriberBuilder struct {
 	handleRetained bool
 	sharedGroup    string
 	wireFormat     wire.WireFormat
+	onDecodeError  wire.DecodeErrorHook
 	logger         *zap.Logger
 	meterProvider  metric.MeterProvider
 	tracerProvider trace.TracerProvider
@@ -73,6 +74,14 @@ func (b *SubscriberBuilder) WithWireFormatName(name string) *SubscriberBuilder {
 	return b
 }
 
+// WithDecodeErrorHook sets an observer invoked when an inbound payload fails
+// to deserialize. The hook cannot suppress the failure: HandleMessage returns
+// an error either way. nil (the default) means no observer.
+func (b *SubscriberBuilder) WithDecodeErrorHook(h wire.DecodeErrorHook) *SubscriberBuilder {
+	b.onDecodeError = h
+	return b
+}
+
 // WithLogger sets the logger.
 func (b *SubscriberBuilder) WithLogger(l *zap.Logger) *SubscriberBuilder {
 	if l != nil {
@@ -122,6 +131,7 @@ func (b *SubscriberBuilder) Build() (*MQTTSubscriber, error) {
 		handleRetained: b.handleRetained,
 		sharedGroup:    b.sharedGroup,
 		wireFormat:     wf,
+		onDecodeError:  b.onDecodeError,
 		logger:         b.logger,
 		metrics:        NewSubscriberMetrics(b.clientName, meter),
 		tracerProvider: b.tracerProvider,

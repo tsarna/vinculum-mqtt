@@ -1,6 +1,43 @@
 # Changelog
 
-## [Unreleased]
+## Unreleased
+
+## v0.9.0 (2026-07-19)
+
+### Changed
+
+- **BREAKING: deserialize failures are no longer swallowed.** `MQTTSubscriber.HandleMessage`
+  used to log a warning and pass the **raw bytes** through as the message payload when the
+  configured wire format failed to decode. That happened even when the caller explicitly
+  configured `wire.JSON`, so there was no way to say "messages on this topic must be JSON".
+  A decode failure is now fatal to the message: `HandleMessage` returns an error and the
+  payload never reaches `subscriber.OnEvent`.
+
+  MQTT has no negative acknowledgement, so the message is simply dropped — nothing
+  accumulates and nothing is redelivered.
+
+  Callers wanting best-effort decoding should use `wire.Auto`, which never fails (it yields
+  a `string` for anything it can't parse as JSON). Note that is not an exact replacement:
+  the old fallback produced `[]byte`, so a subscriber that type-switches on `[]byte` must
+  be adjusted.
+
+- **BREAKING: `SubscriberMetrics.RecordError` takes an `errType` argument** —
+  `RecordError(ctx, topic, errType)` — recorded as the `error.type` attribute. Existing
+  call sites pass `"subscription"`, `"vinculum_topic"`, or `"subscriber"`. Passing an
+  empty `errType` omits the attribute.
+
+- Requires `github.com/tsarna/vinculum-wire` v0.3.0 for the `DecodeError` /
+  `DecodeErrorHook` types.
+
+### Added
+
+- `WithDecodeErrorHook(wire.DecodeErrorHook)` on the subscriber builder. The hook observes
+  a decode failure — it receives the raw payload, the error, the format name, and the MQTT
+  topic — but cannot suppress it: `HandleMessage` returns an error either way. nil (the
+  default) means no observer.
+
+- Deserialize failures are recorded on the error counter with
+  `error.type = "deserialize"`.
 
 ## v0.8.1 (2026-06-26)
 
