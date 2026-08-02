@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+## v0.10.0 (2026-08-02)
+
+### Changed
+
+- **BREAKING: the decode-error hook's MQTT topic is keyed `mqtt_topic`, not `topic`.**
+  `topic` is reserved by `wire.DecodeError`'s own `Topic` field, and a consumer is
+  expected to drop a colliding `Attrs` key rather than let a client shadow a fixed
+  field. Vinculum does exactly that, so this key never reached a config at all; a
+  consumer reading `e.Attrs` directly did see it, which is what makes the rename
+  breaking for them.
+
+  No information was lost either way — the dropped value duplicated `Topic` — but the
+  key was unusable through any consumer that honours the reserved set, and every other
+  client names its transport identifier after the transport (`routing_key`, `stream`,
+  `entry_id`). `mqtt_topic` is also what Vinculum already calls this concept in its own
+  MQTT client config, so a hook reading `ctx.mqtt_topic` matches the surrounding
+  vocabulary.
+
+  The two carry the same string today only because `Topic` falls back to the transport
+  name when the vinculum topic cannot be computed without the payload. Naming them apart
+  keeps a consumer correct if that fallback ever improves.
+
+  Consumers reading `e.Attrs["topic"]` should read `e.Attrs["mqtt_topic"]`, or
+  `e.Topic` if what they wanted was the vinculum topic.
+
+### Added
+
+- Requires `vinculum-wire` v0.5.0 for `wire.IsReservedAttr`, which the subscriber's
+  tests now assert every `Attrs` key against — so a key that would be dropped by a
+  consumer fails here instead of vanishing silently downstream.
+
 ## v0.9.0 (2026-07-19)
 
 ### Changed

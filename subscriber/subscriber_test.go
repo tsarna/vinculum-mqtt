@@ -140,7 +140,14 @@ func TestHandleMessage_DecodeErrorInvokesHookWithoutSuppressing(t *testing.T) {
 	assert.Equal(t, payload, got.Raw)
 	assert.Equal(t, "json", got.Format)
 	assert.Equal(t, "sensor/temp", got.Topic)
-	assert.Equal(t, "sensor/temp", got.Attrs["topic"])
+	// Keyed for the transport. A consumer drops an Attrs key that collides
+	// with one of DecodeError's fixed fields rather than let it shadow one,
+	// so keying this "topic" silently lost the value.
+	assert.Equal(t, "sensor/temp", got.Attrs["mqtt_topic"])
+	for key := range got.Attrs {
+		assert.False(t, wire.IsReservedAttr(key),
+			"Attrs key %q collides with a fixed DecodeError field and would be dropped", key)
+	}
 	require.Error(t, got.Err)
 
 	// The hook observes; it does not suppress.

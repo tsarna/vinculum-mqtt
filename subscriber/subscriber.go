@@ -96,7 +96,12 @@ func (s *MQTTSubscriber) HandleMessage(ctx context.Context, pub *paho.Publish) e
 					Err:    deserErr,
 					Format: s.wireFormat.Name(),
 					Topic:  pub.Topic,
-					Attrs:  map[string]string{"topic": pub.Topic},
+					// Named for the transport, not for the concept: "topic"
+					// is reserved by DecodeError's own Topic field and would
+					// be dropped. The two carry the same string today only
+					// because Topic falls back to the transport name when the
+					// vinculum topic cannot be computed without the payload.
+					Attrs: map[string]string{"mqtt_topic": pub.Topic},
 				})
 			}
 			return fmt.Errorf("mqtt subscriber: deserialize payload for %q: %w", pub.Topic, deserErr)
