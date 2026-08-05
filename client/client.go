@@ -29,6 +29,71 @@ type MQTTClient struct {
 
 	mu sync.Mutex
 	cm *autopaho.ConnectionManager
+	// stopRun cancels the context handed to autopaho, which is the only way to
+	// break out of its reconnect loop from the outside. See reconnectLimiter.
+	stopRun context.CancelFunc
+}
+
+// reconnectLimiter enforces ClientConfig.MaxReconnectAttempts.
+//
+// autopaho's reconnect loop cannot be stopped by returning anything from a
+// callback: establishServerConnection retries until its context is cancelled,
+// and the one callback with a bool return, OnConnectionDown, is consulted once
+// per dropped connection rather than once per failed attempt. So the limit is
+// enforced by counting failures in OnConnectError and cancelling the context
+// the connection manager was built with.
+//
+// The count is of *consecutive* failures and resets on every success, so the
+// limit bounds one outage rather than the client's lifetime. Counting does not
+// begin until the first connection has come up: the field governs reconnection,
+// and a broker that is not listening yet at process start is an ordinary
+// situation rather than one to give up on.
+type reconnectLimiter struct {
+	max    int
+	logger *zap.Logger
+	stop   context.CancelFunc
+
+	mu            sync.Mutex
+	connectedOnce bool
+	failures      int
+}
+
+// connected records a successful connection, which arms the limiter and clears
+// any failures counted during the outage that just ended.
+func (l *reconnectLimiter) connected() {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.connectedOnce = true
+	l.failures = 0
+}
+
+// failed records one failed connection attempt and gives up if that reaches the
+// limit. Called from OnConnectError, which autopaho invokes per attempt.
+func (l *reconnectLimiter) failed() {
+	if l == nil || l.max <= 0 {
+		return
+	}
+
+	l.mu.Lock()
+	if !l.connectedOnce {
+		l.mu.Unlock()
+		return // still working on the initial connection, which is unbounded
+	}
+	l.failures++
+	reached := l.failures >= l.max
+	failures := l.failures
+	l.mu.Unlock()
+
+	if !reached {
+		return
+	}
+	l.logger.Error("mqtt client: giving up reconnection attempts",
+		zap.Int("attempts", failures),
+		zap.Int("max_reconnect_attempts", l.max))
+	l.stop()
 }
 
 // NewClient constructs an MQTTClient. Validates that at least one server URL
@@ -81,11 +146,23 @@ func (c *MQTTClient) Start(ctx context.Context) error {
 	startReady := make(chan struct{})
 	firstConn := true
 
-	router := c.buildRouter(ctx)
-	acfg := c.buildAutopahoConfig(ctx, router, startReady, &firstConn)
+	// runCtx is cancellable independently of the caller's ctx so the reconnect
+	// limiter can shut the connection manager down without the caller having to
+	// give up its own context. Cancelling the caller's ctx still works: runCtx
+	// is derived from it.
+	runCtx, stopRun := context.WithCancel(ctx)
+	limiter := &reconnectLimiter{
+		max:    c.cfg.MaxReconnectAttempts,
+		logger: c.logger,
+		stop:   stopRun,
+	}
 
-	cm, err := autopaho.NewConnection(ctx, acfg)
+	router := c.buildRouter(runCtx)
+	acfg := c.buildAutopahoConfig(runCtx, router, startReady, &firstConn, limiter)
+
+	cm, err := autopaho.NewConnection(runCtx, acfg)
 	if err != nil {
+		stopRun()
 		return fmt.Errorf("mqtt client: create connection manager: %w", err)
 	}
 
@@ -94,13 +171,16 @@ func (c *MQTTClient) Start(ctx context.Context) error {
 	case <-startReady:
 		// First connection up, subscriptions registered, publishers wired.
 	case <-ctx.Done():
+		stopRun()
 		return fmt.Errorf("mqtt client: context cancelled waiting for first connection: %w", ctx.Err())
 	case <-cm.Done():
+		stopRun()
 		return fmt.Errorf("mqtt client: connection manager terminated before first connection")
 	}
 
 	c.mu.Lock()
 	c.cm = cm
+	c.stopRun = stopRun
 	c.mu.Unlock()
 
 	return nil
@@ -111,7 +191,15 @@ func (c *MQTTClient) Start(ctx context.Context) error {
 func (c *MQTTClient) Stop(ctx context.Context) error {
 	c.mu.Lock()
 	cm := c.cm
+	stopRun := c.stopRun
 	c.mu.Unlock()
+
+	// Release runCtx once the graceful disconnect below has finished with it.
+	// Doing it first would cancel the connection manager out from under the
+	// DISCONNECT packet, turning a clean shutdown into a dropped connection.
+	if stopRun != nil {
+		defer stopRun()
+	}
 
 	if cm == nil {
 		return nil
@@ -159,6 +247,7 @@ func (c *MQTTClient) buildAutopahoConfig(
 	router *paho.StandardRouter,
 	startReady chan struct{},
 	firstConn *bool,
+	limiter *reconnectLimiter,
 ) autopaho.ClientConfig {
 	keepAliveSecs := uint16(0)
 	if c.cfg.KeepAlive > 0 {
@@ -176,7 +265,14 @@ func (c *MQTTClient) buildAutopahoConfig(
 		ReconnectBackoff:              c.cfg.ReconnectBackoffFunc,
 		WillMessage:                   buildWillMessage(c.cfg.WillMessage),
 
+		OnConnectError: func(err error) {
+			c.logger.Warn("mqtt client: connection attempt failed", zap.Error(err))
+			limiter.failed()
+		},
+
 		OnConnectionUp: func(cm *autopaho.ConnectionManager, _ *paho.Connack) {
+			limiter.connected()
+
 			// Subscribe to all broker topics on every (re)connection.
 			opts := c.buildSubscribeOptions()
 			if len(opts) > 0 {

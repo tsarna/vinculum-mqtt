@@ -11,6 +11,7 @@ import (
 	bus "github.com/tsarna/vinculum-bus"
 	mqttpublisher "github.com/tsarna/vinculum-mqtt/publisher"
 	mqttsubscriber "github.com/tsarna/vinculum-mqtt/subscriber"
+	"go.uber.org/zap"
 )
 
 func mustURL(s string) *url.URL {
@@ -192,6 +193,89 @@ func TestBuildAutopahoConfig_KeepAlive(t *testing.T) {
 	c, _ := NewClient(cfg)
 	startReady := make(chan struct{})
 	firstConn := true
-	acfg := c.buildAutopahoConfig(context.Background(), paho.NewStandardRouter(), startReady, &firstConn)
+	acfg := c.buildAutopahoConfig(context.Background(), paho.NewStandardRouter(), startReady, &firstConn, nil)
 	assert.Equal(t, uint16(30), acfg.KeepAlive)
+}
+
+// ── reconnect limiter ─────────────────────────────────────────────────────────
+
+func newTestLimiter(max int) (*reconnectLimiter, *bool) {
+	stopped := false
+	return &reconnectLimiter{
+		max:    max,
+		logger: zap.NewNop(),
+		stop:   func() { stopped = true },
+	}, &stopped
+}
+
+// The default and the behaviour before the field existed: reconnect forever.
+// Zero is the Go zero value, so this is the case that must not change.
+func TestReconnectLimiterUnlimitedByDefault(t *testing.T) {
+	for _, max := range []int{0, -1} {
+		l, stopped := newTestLimiter(max)
+		l.connected()
+		for i := 0; i < 1000; i++ {
+			l.failed()
+		}
+		assert.False(t, *stopped, "max=%d should reconnect forever", max)
+	}
+}
+
+func TestReconnectLimiterGivesUpAtTheLimit(t *testing.T) {
+	l, stopped := newTestLimiter(3)
+	l.connected()
+
+	l.failed()
+	l.failed()
+	assert.False(t, *stopped, "not yet at the limit")
+
+	l.failed()
+	assert.True(t, *stopped, "third consecutive failure reaches max=3")
+}
+
+// The limit bounds one outage, not the client's lifetime, so a success in
+// between wipes the slate. Without this a long-lived client would accumulate
+// unrelated failures and eventually give up during a perfectly ordinary blip.
+func TestReconnectLimiterResetsOnSuccess(t *testing.T) {
+	l, stopped := newTestLimiter(3)
+	l.connected()
+
+	l.failed()
+	l.failed()
+	l.connected() // outage over
+	l.failed()
+	l.failed()
+	assert.False(t, *stopped, "two failures either side of a success is not three in a row")
+
+	l.failed()
+	assert.True(t, *stopped)
+}
+
+// MaxReconnectAttempts governs reconnection. A broker that is not listening yet
+// at process start is ordinary, and giving up there would turn a slow
+// dependency into a startup failure.
+func TestReconnectLimiterDoesNotBoundTheInitialConnection(t *testing.T) {
+	l, stopped := newTestLimiter(2)
+
+	for i := 0; i < 50; i++ {
+		l.failed()
+	}
+	assert.False(t, *stopped, "never connected, so nothing to reconnect")
+
+	// Once up, the limit applies from a clean count.
+	l.connected()
+	l.failed()
+	assert.False(t, *stopped)
+	l.failed()
+	assert.True(t, *stopped)
+}
+
+// A nil limiter is the "no limit configured" path used by buildAutopahoConfig's
+// callers in tests; it must be inert rather than panic.
+func TestReconnectLimiterNilIsInert(t *testing.T) {
+	var l *reconnectLimiter
+	assert.NotPanics(t, func() {
+		l.connected()
+		l.failed()
+	})
 }
