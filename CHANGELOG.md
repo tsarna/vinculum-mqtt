@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+## v0.11.0 (2026-08-05)
+
+### Added
+
+- **`ClientConfig.MaxReconnectAttempts`** bounds how many consecutive failed attempts to
+  re-establish a lost connection are made before the client gives up. Zero or negative
+  reconnects forever, which is both the default and the behaviour before this field
+  existed, so upgrading changes nothing until you set it.
+
+  Zero meaning *unlimited* rather than *never reconnect* is deliberate: it makes the new
+  field's zero value the pre-existing behaviour, and it is what `vinculum-bus`'s
+  `AutoReconnector` already means by the same number. "Do not reconnect at all" is
+  therefore not expressible here, as it is not there. `vinculum-rabbitmq` v0.4.0 adds the
+  same field with the same semantics.
+
+  Two properties worth knowing:
+
+  - The count is of **consecutive** failures and resets on every successful connection, so
+    the limit bounds a single outage rather than the lifetime of the client.
+  - It governs **reconnection only**. The initial connection made by `Start` is retried
+    indefinitely whatever this says, because a broker that is not listening yet at process
+    start is an ordinary situation rather than one to give up on.
+
+  Giving up is terminal and quiet, mirroring `AutoReconnector`: an error is logged, the
+  connection manager shuts down, and `Done` is closed. Nothing restarts it, and the process
+  keeps running.
+
+  Enforcing the limit needs more than a callback return value. autopaho's
+  `establishServerConnection` retries until its context is cancelled, and the one callback
+  that returns a `bool` — `OnConnectionDown` — is consulted once per dropped connection
+  rather than once per failed attempt, so it can refuse to reconnect at all but cannot end
+  a reconnect cycle already under way. The limit is therefore enforced by counting failures
+  in `OnConnectError` and cancelling the context the connection manager was built with.
+  `Start` now derives that context from the caller's rather than passing the caller's
+  straight through; cancelling the caller's context still works exactly as before.
+
+- **Failed connection attempts are now logged** (`OnConnectError`, at warn level). The
+  reconnect path previously had no diagnostics at all. During an outage this is one line
+  per backoff interval.
+
 ## v0.10.0 (2026-08-02)
 
 ### Changed
