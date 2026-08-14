@@ -6,7 +6,7 @@ require (
 	github.com/eclipse/paho.golang v0.23.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/stretchr/testify v1.11.1
-	github.com/tsarna/vinculum-bus v0.15.1
+	github.com/tsarna/vinculum-bus v0.16.0
 	github.com/tsarna/vinculum-wire v0.5.0
 	go.opentelemetry.io/otel v1.45.0
 	go.opentelemetry.io/otel/metric v1.45.0
