@@ -32,6 +32,9 @@ type MQTTClient struct {
 	// stopRun cancels the context handed to autopaho, which is the only way to
 	// break out of its reconnect loop from the outside. See reconnectLimiter.
 	stopRun context.CancelFunc
+	// connected mirrors the connection gauge: true between OnConnectionUp and
+	// the OnConnectionDown that follows it. Read by IsConnected.
+	connected bool
 }
 
 // reconnectLimiter enforces ClientConfig.MaxReconnectAttempts.
@@ -130,6 +133,30 @@ func (c *MQTTClient) AddSubscriber(s *mqttsubscriber.MQTTSubscriber) {
 	c.subscribers = append(c.subscribers, s)
 }
 
+// IsConnected reports whether the client currently holds a live connection to
+// the broker: OnConnectionUp has fired without a subsequent OnConnectionDown.
+//
+// It is a snapshot, not a guarantee — the connection may drop between this call
+// and the next publish — which is what makes it useful for a health probe and
+// useless as a precondition. A caller that wants to publish should publish and
+// handle the error.
+//
+// False both before Start and during an outage autopaho's reconnect loop has
+// not yet repaired, so a host reporting readiness from this correctly says "not
+// ready" while the broker is away and recovers on its own.
+func (c *MQTTClient) IsConnected() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.connected
+}
+
+// setConnected records the connection state IsConnected reports.
+func (c *MQTTClient) setConnected(connected bool) {
+	c.mu.Lock()
+	c.connected = connected
+	c.mu.Unlock()
+}
+
 // Start connects to the MQTT broker, registers all subscriptions, injects the
 // publish function into all publishers, and returns. Blocks until the first
 // connection is fully established (OnConnectionUp has run) or ctx is cancelled.
@@ -204,6 +231,12 @@ func (c *MQTTClient) Stop(ctx context.Context) error {
 	if cm == nil {
 		return nil
 	}
+
+	// Cleared here as well as in OnConnectionDown: a graceful DISCONNECT is a
+	// deliberate teardown rather than a dropped connection, so the callback is
+	// not guaranteed to run for it, and a stopped client must not keep
+	// reporting itself connected.
+	defer c.setConnected(false)
 
 	return cm.Disconnect(ctx)
 }
@@ -281,6 +314,7 @@ func (c *MQTTClient) buildAutopahoConfig(
 				}
 			}
 
+			c.setConnected(true)
 			c.metrics.SetConnected(ctx, true)
 
 			if !*firstConn {
@@ -303,6 +337,7 @@ func (c *MQTTClient) buildAutopahoConfig(
 		},
 
 		OnConnectionDown: func() bool {
+			c.setConnected(false)
 			c.metrics.SetConnected(ctx, false)
 			if c.cfg.OnDisconnect != nil {
 				c.cfg.OnDisconnect(ctx)

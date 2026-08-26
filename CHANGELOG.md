@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## v0.12.0 (2026-08-25)
+
+### Added
+
+- **`MQTTClient.IsConnected()`** reports whether the client currently holds a live
+  connection to the broker — `OnConnectionUp` has fired without a subsequent
+  `OnConnectionDown`. The state was previously visible only as a metrics gauge, which a
+  process cannot read back.
+
+  It exists for health reporting. A host that answers a readiness probe needs to say
+  "this process cannot do its job right now" while the broker is away, and recover when
+  autopaho's reconnect loop succeeds — precisely the window this reports. It is a
+  snapshot, not a guarantee: the connection may drop between the call and the next
+  publish, so it is useful for a probe and useless as a precondition.
+
 ## v0.11.0 (2026-08-05)
 
 ### Added
