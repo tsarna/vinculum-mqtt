@@ -215,6 +215,21 @@ func (s *MQTTSubscriber) BrokerSubscriptions() []paho.SubscribeOptions {
 	return opts
 }
 
+// MQTTPatterns returns the pattern of each subscription, for a router deciding
+// whether this subscriber is a recipient of a message.
+//
+// These are the MQTTPattern spellings rather than the BrokerTopic ones, so a
+// router testing them agrees with findSubscription below by construction: it
+// routes here exactly when a subscription will be found. They also never carry
+// the $share/<group>/ prefix, which belongs to the broker subscription alone.
+func (s *MQTTSubscriber) MQTTPatterns() []string {
+	patterns := make([]string, len(s.subscriptions))
+	for i, sub := range s.subscriptions {
+		patterns[i] = sub.MQTTPattern
+	}
+	return patterns
+}
+
 // findSubscription returns the first subscription whose MQTTPattern matches
 // the concrete MQTT topic using topicmatch.Matches.
 func (s *MQTTSubscriber) findSubscription(mqttTopic string) (*TopicSubscription, error) {

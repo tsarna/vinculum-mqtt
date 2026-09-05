@@ -2,6 +2,81 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Overlapping subscriptions in one subscriber no longer deliver each message more than
+  once.** A subscriber declaring both `sensors/#` and `sensors/+/temp` had every
+  `sensors/<x>/temp` message delivered twice — at minimum 2× from the router alone,
+  independent of the broker, and more the deeper the overlap went.
+
+  `paho.StandardRouter` keys handlers by topic filter and calls the handlers of *every*
+  matching filter, which is right for its own model and wrong for ours: one route was
+  registered per subscription per subscriber, so a message matching two of a subscriber's
+  filters ran its `HandleMessage` twice. Both invocations resolved to the same
+  subscription, since `findSubscription` returns the first match — so the result was two
+  identical deliveries rather than two distinguishable ones.
+
+  The overlap is not a user error. A catch-all beside a more specific filter with its own
+  vinculum topic is a reasonable thing to write.
+
+  Routing is now done by recipient rather than by topic: each subscriber is registered
+  once with all of its patterns, and is called once if any of them match. Two *different*
+  subscribers both matching is unchanged — that is declared fan-out, and each is still
+  delivered to once.
+
+  Two limits worth stating, because neither moves. **Broker-side duplication is untouched
+  and cannot be fixed here**: MQTT 5 permits a server to deliver one copy per matching
+  subscription, and those arrive as separate PUBLISH packets, so overlapping filters
+  against a broker that does this may still produce more than one delivery. What is fixed
+  is the router's own multiplication, which happened regardless of broker. And
+  `findSubscription` is still **first-match-wins over declaration order**, so listing
+  `sensors/#` before `sensors/+/temp` still means the specific filter's vinculum topic and
+  extractions are never used — now costing one wasted subscription rather than a duplicate
+  delivery. Reporting that at config load is tracked as tsarna/vinculum#239.
+
+- **A publish carrying only an MQTT 5 topic alias is no longer dropped.** Found while
+  writing the test for the fix above, and independent of it. `StandardRouter` resolves an
+  alias to decide routing and then passes on a message whose `Topic` is still empty; the
+  subscriber, which must read the topic to pick a subscription and derive a vinculum
+  topic, rejected it as unmatched.
+
+  This is defence rather than a repair, and the entry should not be read as an outage
+  fixed. Inbound aliasing is the server's to start, and only if the client invited it:
+  nothing here sets a connect-time Topic Alias Maximum, so it defaults to 0 and MQTT 5
+  §3.1.2.11.3 forbids a conforming server from sending an alias at all. Only a
+  non-conforming broker reaches the path — and against one, delivery would have stopped
+  after the first message on each topic. Advertising a `TopicAliasMaximum`, if the
+  bandwidth saving is ever wanted, is separate and larger work.
+
+  Aliases are also now forgotten on reconnect — cleared in both `OnConnectionDown` and
+  `OnConnectionUp`. They are scoped to the session that assigned them, and the router
+  outlives the connections it serves. Down is what closes the window, since the incoming
+  loop can route a packet before Up runs; Up is the backstop, since a graceful DISCONNECT
+  is not guaranteed to run Down.
+
+- **Two smaller routing changes, both improvements, neither of which anyone asked for.**
+  Recorded because they are behaviour differences rather than because they are likely to
+  be noticed:
+
+  - A publish with an **empty topic and no topic alias** is now dropped rather than
+    delivered. paho's matcher answers true for `#` against an empty topic, so a subscriber
+    with a catch-all filter used to receive it. There is nothing to match a subscription
+    against and nothing to derive a vinculum topic from, so declining is the better
+    answer. Not reachable off the wire.
+  - **Duplicate identical patterns on one subscriber** now deliver once. Two
+    `subscription "sensors/#"` entries in the same receiver used to register two routes
+    and produce two deliveries; the subscriber is one recipient now, so it gets one. This
+    is the same defect as the overlap above, in its most literal form.
+
+### Added
+
+- **`MQTTSubscriber.MQTTPatterns()`** returns the pattern of each of a subscriber's
+  subscriptions, for a router deciding whether that subscriber is a recipient. These are
+  the `MQTTPattern` spellings rather than the `BrokerTopic` ones, so a router testing them
+  agrees with `findSubscription` by construction: it routes to a subscriber exactly when a
+  subscription will be found. They also never carry the `$share/<group>/` prefix, which
+  belongs to the broker subscription alone — so the router no longer has to strip it.
+
 ## v0.12.1 (2026-08-25)
 
 Same change as v0.12.0, released on top of the dependency updates v0.12.0 was tagged

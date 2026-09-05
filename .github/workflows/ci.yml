@@ -21,5 +21,10 @@ jobs:
       - name: Build
         run: go build ./...
 
+      # Under -race, because some of what this suite guards is only observable
+      # to the race detector. TestConcurrentRouteAndRegistration asserts
+      # nothing by design — it is a canary for the router's copy-on-write
+      # invariant, and a plain `go test` cannot fail it however badly that
+      # invariant is broken. The build already covers the non-race compile.
       - name: Test
-        run: go test ./...
+        run: go test -race ./...

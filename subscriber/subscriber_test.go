@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	bus "github.com/tsarna/vinculum-bus"
+	"github.com/tsarna/vinculum-bus/topicmatch"
 	wire "github.com/tsarna/vinculum-wire"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/baggage"
@@ -578,4 +579,48 @@ func TestBuild_BrokerTopicComputedAutomatically(t *testing.T) {
 		Build()
 	require.NoError(t, err)
 	assert.Equal(t, "sensor/+/data", s.subscriptions[0].BrokerTopic)
+}
+
+// MQTTPatterns is what a router matches on, and it promises two things a caller
+// depends on: the MQTTPattern spelling rather than the BrokerTopic one, so that
+// routing agrees with findSubscription; and no $share/<group>/ prefix, which
+// belongs to the broker subscription alone. Both are pinned here, where they are
+// promised, rather than only through a router's behaviour in another package.
+func TestMQTTPatterns_AreThePatternsNotTheBrokerTopics(t *testing.T) {
+	s, err := NewSubscriber().
+		WithSharedGroup("workers").
+		WithSubscription(TopicSubscription{MQTTPattern: "sensor/+deviceId/data"}).
+		WithSubscription(TopicSubscription{MQTTPattern: "status/#"}).
+		WithSubscriber(&captureSubscriber{}).
+		Build()
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"sensor/+deviceId/data", "status/#"}, s.MQTTPatterns(),
+		"field names are kept and the shared-group prefix is not added")
+
+	// The contrast that makes the point: the broker sees both transformations.
+	require.Len(t, s.BrokerSubscriptions(), 2)
+	assert.Equal(t, "$share/workers/sensor/+/data", s.BrokerSubscriptions()[0].Topic)
+}
+
+// The invariant the router leans on, stated directly: a topic reaches
+// findSubscription successfully exactly when one of MQTTPatterns matches it.
+func TestMQTTPatterns_AgreeWithFindSubscription(t *testing.T) {
+	s, err := NewSubscriber().
+		WithSubscription(TopicSubscription{MQTTPattern: "sensor/+deviceId/data"}).
+		WithSubscriber(&captureSubscriber{}).
+		Build()
+	require.NoError(t, err)
+
+	for _, topic := range []string{"sensor/a/data", "sensor/a/other", "$SYS/x"} {
+		var anyMatch bool
+		for _, p := range s.MQTTPatterns() {
+			if topicmatch.Matches(p, topic) {
+				anyMatch = true
+			}
+		}
+		_, err := s.findSubscription(topic)
+		assert.Equal(t, anyMatch, err == nil,
+			"routing and dispatch must agree about %q", topic)
+	}
 }

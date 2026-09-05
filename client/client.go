@@ -241,24 +241,20 @@ func (c *MQTTClient) Stop(ctx context.Context) error {
 	return cm.Disconnect(ctx)
 }
 
-// buildRouter creates a paho.StandardRouter that routes each incoming message
-// to the HandleMessage of the appropriate MQTTSubscriber.
-func (c *MQTTClient) buildRouter(ctx context.Context) *paho.StandardRouter {
-	router := paho.NewStandardRouter()
+// buildRouter creates the router that hands each incoming message to the
+// HandleMessage of every subscriber it is for — once per subscriber, not once
+// per matching subscription. See router.go for why that needs a router of our
+// own rather than paho.StandardRouter.
+func (c *MQTTClient) buildRouter(ctx context.Context) *subscriberRouter {
+	router := newSubscriberRouter()
 	for _, sub := range c.subscribers {
-		sub := sub // capture loop variable
-		for _, opt := range sub.BrokerSubscriptions() {
-			topic := opt.Topic
-			// Strip shared subscription prefix for router registration —
-			// the router matches on the concrete topic, not the $share prefix.
-			router.RegisterHandler(stripSharePrefix(topic), func(pub *paho.Publish) {
-				if err := sub.HandleMessage(ctx, pub); err != nil {
-					c.logger.Error("mqtt subscriber: handle message error",
-						zap.String("topic", pub.Topic),
-						zap.Error(err))
-				}
-			})
-		}
+		router.AddRecipient(sub.MQTTPatterns(), func(pub *paho.Publish) {
+			if err := sub.HandleMessage(ctx, pub); err != nil {
+				c.logger.Error("mqtt subscriber: handle message error",
+					zap.String("topic", pub.Topic),
+					zap.Error(err))
+			}
+		})
 	}
 	return router
 }
@@ -277,7 +273,7 @@ func (c *MQTTClient) buildSubscribeOptions() []paho.SubscribeOptions {
 // are wired. firstConn is a pointer to a local bool in Start().
 func (c *MQTTClient) buildAutopahoConfig(
 	ctx context.Context,
-	router *paho.StandardRouter,
+	router *subscriberRouter,
 	startReady chan struct{},
 	firstConn *bool,
 	limiter *reconnectLimiter,
@@ -305,6 +301,15 @@ func (c *MQTTClient) buildAutopahoConfig(
 
 		OnConnectionUp: func(cm *autopaho.ConnectionManager, _ *paho.Connack) {
 			limiter.connected()
+
+			// Topic aliases belong to the session that assigned them, and this
+			// router outlives its connections. Cleared here as well as in
+			// OnConnectionDown: the incoming loop can route a packet before
+			// this callback runs, so Down is what actually closes the window —
+			// but a graceful DISCONNECT is not guaranteed to run Down at all,
+			// the same reason Stop clears the connected flag itself. Clearing
+			// an empty map twice costs nothing.
+			router.resetAliases()
 
 			// Subscribe to all broker topics on every (re)connection.
 			opts := c.buildSubscribeOptions()
@@ -337,6 +342,9 @@ func (c *MQTTClient) buildAutopahoConfig(
 		},
 
 		OnConnectionDown: func() bool {
+			// Before the next session can route anything. See OnConnectionUp.
+			router.resetAliases()
+
 			c.setConnected(false)
 			c.metrics.SetConnected(ctx, false)
 			if c.cfg.OnDisconnect != nil {
@@ -366,20 +374,4 @@ func buildWillMessage(cfg *WillConfig) *paho.WillMessage {
 		QoS:     cfg.QoS,
 		Retain:  cfg.Retain,
 	}
-}
-
-// stripSharePrefix removes the "$share/<group>/" prefix from a topic so it can
-// be registered with the paho router, which matches on concrete topics.
-// "sensor/+/data" and "$share/workers/sensor/+/data" both register as "sensor/+/data".
-func stripSharePrefix(topic string) string {
-	if len(topic) > 7 && topic[:7] == "$share/" {
-		// Find the second slash: "$share/groupname/actual/topic"
-		rest := topic[7:]
-		for i, ch := range rest {
-			if ch == '/' {
-				return rest[i+1:]
-			}
-		}
-	}
-	return topic
 }

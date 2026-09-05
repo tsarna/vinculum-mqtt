@@ -5,7 +5,6 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/eclipse/paho.golang/paho"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	bus "github.com/tsarna/vinculum-bus"
@@ -130,20 +129,6 @@ func TestBuildSubscribeOptions_MultipleSubscribers(t *testing.T) {
 	assert.Len(t, c.buildSubscribeOptions(), 3)
 }
 
-// ── stripSharePrefix ──────────────────────────────────────────────────────────
-
-func TestStripSharePrefix_NoPrefix(t *testing.T) {
-	assert.Equal(t, "sensor/+/data", stripSharePrefix("sensor/+/data"))
-}
-
-func TestStripSharePrefix_WithPrefix(t *testing.T) {
-	assert.Equal(t, "sensor/+/data", stripSharePrefix("$share/workers/sensor/+/data"))
-}
-
-func TestStripSharePrefix_HashWildcard(t *testing.T) {
-	assert.Equal(t, "sensor/#", stripSharePrefix("$share/grp/sensor/#"))
-}
-
 // ── buildWillMessage ──────────────────────────────────────────────────────────
 
 func TestBuildWillMessage_Nil(t *testing.T) {
@@ -170,7 +155,10 @@ func TestStop_BeforeStart_IsNoop(t *testing.T) {
 
 // ── buildRouter ───────────────────────────────────────────────────────────────
 
-func TestBuildRouter_RegistersHandlersForEachBrokerTopic(t *testing.T) {
+// One recipient per subscriber, carrying all of that subscriber's patterns —
+// which is the arrangement that makes an overlap one delivery rather than two.
+// What reaches the bus is asserted in router_test.go; this pins the shape.
+func TestBuildRouter_OneRecipientPerSubscriber(t *testing.T) {
 	c, _ := NewClient(validConfig())
 	s, _ := mqttsubscriber.NewSubscriber().
 		WithSubscription(mqttsubscriber.TopicSubscription{MQTTPattern: "sensor/+deviceId/data"}).
@@ -179,10 +167,10 @@ func TestBuildRouter_RegistersHandlersForEachBrokerTopic(t *testing.T) {
 		Build()
 	c.AddSubscriber(s)
 
-	// buildRouter should not panic and should register handlers.
-	// We can't easily introspect the router, but we verify it returns without error.
 	router := c.buildRouter(context.Background())
-	assert.NotNil(t, router)
+	require.Len(t, router.entries, 1, "two subscriptions on one subscriber is one recipient")
+	assert.Equal(t, []string{"sensor/+deviceId/data", "status/#"}, router.entries[0].patterns,
+		"the recipient should carry every pattern that reaches it")
 }
 
 // ── keepAlive conversion ──────────────────────────────────────────────────────
@@ -193,7 +181,7 @@ func TestBuildAutopahoConfig_KeepAlive(t *testing.T) {
 	c, _ := NewClient(cfg)
 	startReady := make(chan struct{})
 	firstConn := true
-	acfg := c.buildAutopahoConfig(context.Background(), paho.NewStandardRouter(), startReady, &firstConn, nil)
+	acfg := c.buildAutopahoConfig(context.Background(), newSubscriberRouter(), startReady, &firstConn, nil)
 	assert.Equal(t, uint16(30), acfg.KeepAlive)
 }
 
