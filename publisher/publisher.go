@@ -213,7 +213,6 @@ func (p *MQTTPublisher) resolveMapping(topic string, msg any, fields map[string]
 	}
 }
 
-
 // fieldsToUserProperties converts a vinculum fields map to MQTT 5 user
 // properties. Returns nil for an empty or nil map.
 func fieldsToUserProperties(fields map[string]string) paho.UserProperties {

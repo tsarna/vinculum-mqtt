@@ -35,12 +35,12 @@ import (
 )
 
 type wsConn struct {
-	ws  *websocket.Conn
-	rio sync.Mutex  // guards concurrent reads
-	wmu sync.Mutex  // guards concurrent writes / flush
-	buf bytes.Buffer // accumulates writes while locked
+	ws     *websocket.Conn
+	rio    sync.Mutex   // guards concurrent reads
+	wmu    sync.Mutex   // guards concurrent writes / flush
+	buf    bytes.Buffer // accumulates writes while locked
 	locked bool
-	r   io.Reader  // current WebSocket message reader
+	r      io.Reader // current WebSocket message reader
 }
 
 // newWSConn dials a WebSocket MQTT connection and returns a wsConn.

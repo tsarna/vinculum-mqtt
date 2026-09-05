@@ -11,8 +11,8 @@ import (
 // PublisherMetrics holds the OTel instruments for an MQTTPublisher.
 // A nil *PublisherMetrics is valid and results in no-op recording.
 type PublisherMetrics struct {
-	messagesSent    metric.Int64Counter    // messaging.client.sent.messages
-	errors          metric.Int64Counter    // mqtt.publisher.errors
+	messagesSent    metric.Int64Counter     // messaging.client.sent.messages
+	errors          metric.Int64Counter     // mqtt.publisher.errors
 	publishDuration metric.Float64Histogram // messaging.client.operation.duration
 	clientTag       attribute.KeyValue
 }
